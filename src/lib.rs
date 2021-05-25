@@ -11,14 +11,14 @@ use velcro::*;
 #[macro_export]
 macro_rules! query {
     ($expr: tt $(/$field: tt)*) => {{
-        fn query<'a>(v: &'a impl Queryable<'a>) -> Box<dyn Iterator<Item = Result<'a, Value>> + 'a> {
+        fn query<'a>(v: &'a impl Queryable<'a>) -> Box<dyn Iterator<Item = Value> + 'a> {
             query!(@ v, $(/$field)*)
         }
         query(&$expr)
     }
     };
     (@ $expr: expr,) => {{
-        let r: Box<dyn Iterator<Item = Result<'a, Value>>> = Box::from(iter::once($expr.data()));
+        let r: Box<dyn Iterator<Item = Value>> = Box::from($expr.data().into_iter());
         r
     }};
     (@ $expr: expr, / * $(/ $others: tt)*) => {
@@ -28,13 +28,9 @@ macro_rules! query {
     };
     (@ $expr: expr, /$field: tt $(/ $others: tt)*) => {
         match $expr.member(stringify!($field)) {
-            Ok(Some(v)) => query!(@ v, $(/ $others)*),
-            Ok(None) => {
-                let r: Box<dyn Iterator<Item = Result<'a, Value>>> = Box::from(iter::empty());
-                r
-            }
-            Err(e) => {
-                let r: Box<dyn Iterator<Item = Result<'a, Value>>> = Box::from(iter::once(Err(e)));
+            Some(v) => query!(@ v, $(/ $others)*),
+            None => {
+                let r: Box<dyn Iterator<Item = Value>> = Box::from(iter::empty());
                 r
             }
         }
@@ -84,14 +80,12 @@ fn test() {
 }
 
 #[derive(Debug, Error, Clone, Copy)]
-pub enum Error<'e> {
-    #[error("Field '{0}' doesn't exist")]
-    NoSuchField(&'e str),
+pub enum Error {
     #[error("Not a terminal node")]
     NotATerminal,
 }
 
-pub type Result<'e, T, E = Error<'e>> = std::result::Result<T, E>;
+pub type ResultT<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, Clone)]
 enum Value {
@@ -144,21 +138,17 @@ impl Display for Value {
 }
 
 trait Queryable<'a> {
-    fn members(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         Box::new(iter::empty())
     }
-    fn member<'f>(&'a self, field: &'f str) -> Result<'f, Option<&dyn Queryable<'a>>> {
-        Err(Error::NoSuchField(field))
+    fn member<'f>(&'a self, _: &'f str) -> Option<&dyn Queryable<'a>> {
+        None
     }
     fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
-        // Box::from(
-        //     self.members()
-        //         .flat_map(|field| self.member(&field).ok().flatten()),
-        // )
         Box::new(iter::empty())
     }
-    fn data(&self) -> Result<'static, Value> {
-        Err(Error::NotATerminal)
+    fn data(&self) -> Option<Value> {
+        None
     }
     fn display(&self) -> Option<String> {
         None
@@ -166,24 +156,24 @@ trait Queryable<'a> {
 }
 
 impl<'a> Queryable<'a> for i32 {
-    fn data(&self) -> Result<'static, Value> {
-        Ok(Value::Int((*self).into()))
+    fn data(&self) -> Option<Value> {
+        Some(Value::Int((*self).into()))
     }
     fn display(&self) -> Option<String> {
         Some(format!("{}", self))
     }
 }
 impl<'a> Queryable<'a> for i64 {
-    fn data(&self) -> Result<'static, Value> {
-        Ok(Value::Int((*self).into()))
+    fn data(&self) -> Option<Value> {
+        Some(Value::Int((*self).into()))
     }
     fn display(&self) -> Option<String> {
         Some(format!("{}", self))
     }
 }
 impl<'a> Queryable<'a> for &str {
-    fn data(&self) -> Result<'static, Value> {
-        Ok(Value::String(self.to_string()))
+    fn data(&self) -> Option<Value> {
+        Some(Value::String(self.to_string()))
     }
     fn display(&self) -> Option<String> {
         Some(format!("{}", self))
@@ -191,8 +181,8 @@ impl<'a> Queryable<'a> for &str {
 }
 
 impl<'a> Queryable<'a> for String {
-    fn data(&self) -> Result<'static, Value> {
-        Ok(Value::String(self.clone()))
+    fn data(&self) -> Option<Value> {
+        Some(Value::String(self.clone()))
     }
     fn display(&self) -> Option<String> {
         Some(format!("{}", self))
@@ -204,14 +194,14 @@ impl<'a, K: Queryable<'a> + Hash + Eq + FromStr + Debug, V: Queryable<'a>> Query
 where
     <K as FromStr>::Err: Debug,
 {
-    fn members(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         Box::from(self.keys().filter_map(|k| k.display()))
     }
-    fn member<'f>(&'a self, field: &'f str) -> Result<'f, Option<&dyn Queryable<'a>>> {
-        Ok(K::from_str(field)
+    fn member<'f>(&'a self, field: &'f str) -> Option<&dyn Queryable<'a>> {
+        K::from_str(field)
             .ok()
             .and_then(|field| self.get(&field))
-            .map(|v| v as _))
+            .map(|v| v as _)
     }
     fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
         Box::new(self.values().map(|v| v as _))
@@ -219,14 +209,14 @@ where
 }
 
 impl<'a, K: Queryable<'a> + Ord + Eq + FromStr, V: Queryable<'a>> Queryable<'a> for BTreeMap<K, V> {
-    fn members(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         Box::from(self.keys().filter_map(|k| k.display()))
     }
-    fn member<'f>(&'a self, field: &'f str) -> Result<'f, Option<&dyn Queryable<'a>>> {
-        Ok(K::from_str(field)
+    fn member<'f>(&'a self, field: &'f str) -> Option<&dyn Queryable<'a>> {
+        K::from_str(field)
             .ok()
             .and_then(|field| self.get(&field))
-            .map(|v| v as _))
+            .map(|v| v as _)
     }
     fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
         Box::new(self.values().map(|v| v as _))
@@ -234,14 +224,14 @@ impl<'a, K: Queryable<'a> + Ord + Eq + FromStr, V: Queryable<'a>> Queryable<'a> 
 }
 
 impl<'a, T: Queryable<'a>> Queryable<'a> for Vec<T> {
-    fn members(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         Box::from((0..self.len()).map(|v| v.to_string()))
     }
-    fn member<'f>(&'a self, field: &'f str) -> Result<'f, Option<&dyn Queryable<'a>>> {
-        Ok(usize::from_str(field)
+    fn member<'f>(&'a self, field: &'f str) -> Option<&dyn Queryable<'a>> {
+        usize::from_str(field)
             .ok()
             .and_then(|index| self.get(index))
-            .map(|v| v as _))
+            .map(|v| v as _)
     }
     fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
         Box::new(self.iter().map(|v| v as _))
@@ -256,15 +246,15 @@ pub struct Custom {
 }
 
 impl<'a> Queryable<'a> for Custom {
-    fn members(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         Box::from(iter!["a", "b", "c"].map(str::to_string))
     }
-    fn member<'f>(&self, field: &'f str) -> Result<'f, Option<&dyn Queryable<'a>>> {
+    fn member<'f>(&self, field: &'f str) -> Option<&dyn Queryable<'a>> {
         match field {
-            "a" => Ok(Some(&self.a as _)),
-            "b" => Ok(Some(&self.b as _)),
-            "c" => Ok(Some(&self.c as _)),
-            _ => Err(Error::NoSuchField(field)),
+            "a" => Some(&self.a as _),
+            "b" => Some(&self.b as _),
+            "c" => Some(&self.c as _),
+            _ => None,
         }
     }
 }
