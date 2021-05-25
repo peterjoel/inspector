@@ -1,3 +1,6 @@
+mod query;
+
+use query::{Path, Segment};
 use std::collections::*;
 use std::fmt::Debug;
 use std::fmt::{self, Display};
@@ -72,10 +75,20 @@ fn test() {
         ],
     };
 
-    let x = query!(root / * / 0 / * / a);
+    let x = query!(root / * / * / 55 / a);
     println!("x..");
     for y in x {
-        println!("y = {:?}", y);
+        println!("   y = {:?}", y);
+    }
+
+    let q = Path::default()
+        .append(Segment::All)
+        .append(Segment::All)
+        .append(Segment::Named("55".to_string()))
+        .append(Segment::Named("a".to_string()));
+    let x = q.exec(&root);
+    for y in x {
+        println!("** y = {:?}", y);
     }
 }
 
