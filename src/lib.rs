@@ -97,6 +97,27 @@ fn test() {
     for y in x {
         println!("** y = {:?}", y);
     }
+
+    use CustomEnum::*;
+    let tree = hash_map! {
+        1: One,
+        2: Two("Hello".to_string()),
+        3: Three(vec![One], 44),
+        4: Three(vec![Three(vec![One, Two("ABC".to_string())],1), One, One], 3),
+        5: Three(vec![Three(vec![One, Two("x".to_string())],1), One, One], 6),
+    };
+    let q = Path::default()
+        .append(SegmentType::All.to_segment().with_filter(Pred::new(
+            Path::default(),
+            Compare::Eq,
+            Value::String("Two".to_string()),
+        )))
+        .append(SegmentType::Named("0".to_string()).to_segment())
+        .append(SegmentType::Named("0".to_string()).to_segment());
+    let x = q.exec(&tree);
+    for y in x {
+        println!("---- y = {:?}", y);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -232,6 +253,44 @@ impl<'a> Queryable<'a> for Custom {
             "b" => Some(&self.b as _),
             "c" => Some(&self.c as _),
             _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CustomEnum {
+    One,
+    Two(String),
+    Three(Vec<CustomEnum>, i64),
+}
+
+impl<'a> Queryable<'a> for CustomEnum {
+    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        Box::from(iter!["0", "1"].map(str::to_string))
+    }
+    fn member<'f>(&self, field: &'f str) -> Option<&dyn Queryable<'a>> {
+        match self {
+            CustomEnum::One => None,
+            CustomEnum::Two(s) => {
+                if field == "0" {
+                    Some(s as _)
+                } else {
+                    None
+                }
+            }
+            CustomEnum::Three(b, i) => match field {
+                "0" => Some(b as _),
+                "1" => Some(i as _),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn data(&self) -> Option<Value> {
+        match self {
+            CustomEnum::One => Some(Value::String(String::from("One"))),
+            CustomEnum::Two(_) => Some(Value::String(String::from("Two"))),
+            CustomEnum::Three(_, _) => Some(Value::String(String::from("Three"))),
         }
     }
 }
