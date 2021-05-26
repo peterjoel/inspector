@@ -1,13 +1,12 @@
 mod query;
 
-use query::{Path, Segment};
+use query::{Compare, Path, Pred, Segment, SegmentType};
 use std::collections::*;
 use std::fmt::Debug;
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::iter;
 use std::str::FromStr;
-use thiserror::Error;
 use velcro::vec;
 use velcro::*;
 
@@ -82,63 +81,28 @@ fn test() {
     }
 
     let q = Path::default()
-        .append(Segment::All)
-        .append(Segment::All)
-        .append(Segment::Named("55".to_string()))
-        .append(Segment::Named("a".to_string()));
+        .append(SegmentType::All.into())
+        .append(
+            SegmentType::All.to_segment().with_filter(Pred::new(
+                Path::default()
+                    .append(SegmentType::Named("55".to_string()).into())
+                    .append(SegmentType::Named("a".to_string()).into()),
+                Compare::LessThan,
+                Value::Int(444),
+            )),
+        )
+        .append(SegmentType::Named("55".to_string()).into())
+        .append(SegmentType::Named("a".to_string()).into());
     let x = q.exec(&root);
     for y in x {
         println!("** y = {:?}", y);
     }
 }
 
-#[derive(Debug, Error, Clone, Copy)]
-pub enum Error {
-    #[error("Not a terminal node")]
-    NotATerminal,
-}
-
-pub type ResultT<T, E = Error> = std::result::Result<T, E>;
-
 #[derive(Debug, Clone)]
-enum Value {
+pub enum Value {
     String(String),
     Int(i64),
-}
-
-struct Pred {
-    a: Value,
-    comp: Compare,
-    b: Value,
-}
-enum Compare {
-    LessThan,
-    LessThanEq,
-    Eq,
-    GreaterThan,
-    GreaterThanEq,
-}
-
-impl Pred {
-    fn eval(&self) -> bool {
-        match (&self.a, &self.b) {
-            (Value::String(a), Value::String(b)) => match self.comp {
-                Compare::LessThan => a < b,
-                Compare::LessThanEq => a <= b,
-                Compare::Eq => a <= b,
-                Compare::GreaterThan => a > b,
-                Compare::GreaterThanEq => a >= b,
-            },
-            (Value::Int(a), Value::Int(b)) => match self.comp {
-                Compare::LessThan => a < b,
-                Compare::LessThanEq => a <= b,
-                Compare::Eq => a <= b,
-                Compare::GreaterThan => a > b,
-                Compare::GreaterThanEq => a >= b,
-            },
-            _ => false,
-        }
-    }
 }
 
 impl Display for Value {
@@ -150,7 +114,7 @@ impl Display for Value {
     }
 }
 
-trait Queryable<'a> {
+pub trait Queryable<'a> {
     fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         Box::new(iter::empty())
     }
@@ -269,5 +233,12 @@ impl<'a> Queryable<'a> for Custom {
             "c" => Some(&self.c as _),
             _ => None,
         }
+    }
+}
+
+impl<'a> Debug for &'a dyn Queryable<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let keys: Vec<_> = self.keys().collect();
+        write!(f, "{:?}", keys)
     }
 }
