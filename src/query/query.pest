@@ -1,0 +1,13 @@
+query = { SOI ~ path ~ EOI }
+path = { "." ~ filter? ~ ("/" ~ segment ~ filter?)* }
+segment = { wildcard | ident | integer }
+wildcard = @{ "*" }
+filter = { "[" ~ filter_cond ~ "]" } 
+filter_cond = { path ~ op_compare ~ literal }
+op_compare = @{ "?"? ~ ("<=" | ">=" | "=" | ">" | "<") }
+ident = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
+literal = {integer | string}
+integer = @{ "0" | (!("0") ~ ASCII_DIGIT+) }
+// TODO handle escape sequences in strings
+string = @{ "\"" ~ (!("\"") ~ ANY)* ~ "\""} 
+WHITESPACE = _{" " | "\t" | "\r" | "\n"}

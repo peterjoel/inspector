@@ -1,139 +1,14 @@
 mod query;
 
-use query::{Compare, Path, Pred, Segment, SegmentType};
+use query::Value;
 use std::collections::*;
-use std::fmt::Debug;
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 use std::iter;
 use std::str::FromStr;
-use velcro::vec;
-use velcro::*;
+use velcro::iter;
 
-#[macro_export]
-macro_rules! query {
-    ($expr: tt $(/$field: tt)*) => {{
-        fn query<'a>(v: &'a impl Queryable<'a>) -> Box<dyn Iterator<Item = Value> + 'a> {
-            query!(@ v, $(/$field)*)
-        }
-        query(&$expr)
-    }
-    };
-    (@ $expr: expr,) => {{
-        let r: Box<dyn Iterator<Item = Value>> = Box::from($expr.data().into_iter());
-        r
-    }};
-    (@ $expr: expr, / * $(/ $others: tt)*) => {
-        Box::new($expr.all().flat_map(|v| {
-            query!(@ v, $(/$others)*)
-        }))
-    };
-    (@ $expr: expr, /$field: tt $(/ $others: tt)*) => {
-        match $expr.member(stringify!($field)) {
-            Some(v) => query!(@ v, $(/ $others)*),
-            None => {
-                let r: Box<dyn Iterator<Item = Value>> = Box::from(iter::empty());
-                r
-            }
-        }
-    }
-}
-
-#[test]
-fn test() {
-    let root = hash_map! {
-        1: vec![
-            btree_map! {
-                55: Custom{a: 7,.. Custom::default()}
-            },
-            btree_map! {
-                66: Custom {
-                    a: 55,
-                    ..Custom::default()
-                },
-                100: Custom{
-                    a: 5,
-                    b:"hello".to_string(),
-                    c: vec![1,2,3]
-                }
-            }
-        ],
-        ..(2..100): vec![],
-        ..(8..12): vec![
-            btree_map!{
-                55: Custom::default()
-            },
-            btree_map!{
-                6: Custom { a: 6,..Custom::default()},
-                55: Custom {
-                    a: 444,
-                    b: "SDFDF".to_string(),
-                    c: vec![99]
-                }
-            }
-        ],
-    };
-
-    let x = query!(root / * / * / 55 / a);
-    println!("x..");
-    for y in x {
-        println!("   y = {:?}", y);
-    }
-
-    let q = Path::default()
-        .append(SegmentType::All.into())
-        .append(
-            SegmentType::All.to_segment().with_filter(Pred::new(
-                Path::default()
-                    .append(SegmentType::Named("55".to_string()).into())
-                    .append(SegmentType::Named("a".to_string()).into()),
-                Compare::LessThan,
-                Value::Int(444),
-            )),
-        )
-        .append(SegmentType::Named("55".to_string()).into())
-        .append(SegmentType::Named("a".to_string()).into());
-    let x = q.exec(&root);
-    for y in x {
-        println!("** y = {:?}", y);
-    }
-
-    use CustomEnum::*;
-    let tree = hash_map! {
-        1: One,
-        2: Two("Hello".to_string()),
-        3: Three(vec![One], 44),
-        4: Three(vec![Three(vec![One, Two("ABC".to_string())],1), One, One], 3),
-        5: Three(vec![Three(vec![One, Two("x".to_string())],1), One, One], 6),
-    };
-    let q = Path::default()
-        .append(SegmentType::All.to_segment().with_filter(Pred::new(
-            Path::default(),
-            Compare::Eq,
-            Value::String("Two".to_string()),
-        )))
-        .append(SegmentType::Named("0".to_string()).to_segment())
-        .append(SegmentType::Named("0".to_string()).to_segment());
-    let x = q.exec(&tree);
-    for y in x {
-        println!("---- y = {:?}", y);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Value {
-    String(String),
-    Int(i64),
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Value::String(v) => write!(f, "{}", v),
-            Value::Int(v) => write!(f, "{}", v),
-        }
-    }
-}
+pub use query::parse_query;
 
 pub trait Queryable<'a> {
     fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
@@ -236,68 +111,203 @@ impl<'a, T: Queryable<'a>> Queryable<'a> for Vec<T> {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct Custom {
-    a: i64,
-    b: String,
-    c: Vec<i32>,
-}
-
-impl<'a> Queryable<'a> for Custom {
-    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        Box::from(iter!["a", "b", "c"].map(str::to_string))
-    }
-    fn member<'f>(&self, field: &'f str) -> Option<&dyn Queryable<'a>> {
-        match field {
-            "a" => Some(&self.a as _),
-            "b" => Some(&self.b as _),
-            "c" => Some(&self.c as _),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum CustomEnum {
-    One,
-    Two(String),
-    Three(Vec<CustomEnum>, i64),
-}
-
-impl<'a> Queryable<'a> for CustomEnum {
-    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        Box::from(iter!["0", "1"].map(str::to_string))
-    }
-    fn member<'f>(&self, field: &'f str) -> Option<&dyn Queryable<'a>> {
-        match self {
-            CustomEnum::One => None,
-            CustomEnum::Two(s) => {
-                if field == "0" {
-                    Some(s as _)
-                } else {
-                    None
-                }
-            }
-            CustomEnum::Three(b, i) => match field {
-                "0" => Some(b as _),
-                "1" => Some(i as _),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-    fn data(&self) -> Option<Value> {
-        match self {
-            CustomEnum::One => Some(Value::String(String::from("One"))),
-            CustomEnum::Two(_) => Some(Value::String(String::from("Two"))),
-            CustomEnum::Three(_, _) => Some(Value::String(String::from("Three"))),
-        }
-    }
-}
-
 impl<'a> Debug for &'a dyn Queryable<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let keys: Vec<_> = self.keys().collect();
         write!(f, "{:?}", keys)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use velcro::vec;
+    use velcro::*;
+
+    #[derive(Default, Debug)]
+    pub struct Custom {
+        a: i64,
+        b: String,
+        c: Vec<CustomEnum>,
+    }
+
+    impl<'a> Queryable<'a> for Custom {
+        fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+            Box::from(iter!["a", "b", "c"].map(str::to_string))
+        }
+        fn member<'f>(&self, field: &'f str) -> Option<&dyn Queryable<'a>> {
+            match field {
+                "a" => Some(&self.a as _),
+                "b" => Some(&self.b as _),
+                "c" => Some(&self.c as _),
+                _ => None,
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    pub enum CustomEnum {
+        One,
+        Two(String),
+        Three(Vec<CustomEnum>, i64),
+    }
+
+    impl<'a> Queryable<'a> for CustomEnum {
+        fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+            match self {
+                CustomEnum::One => Box::new(iter::empty()),
+                CustomEnum::Two(_) => Box::new(iter::once("0".to_string())),
+                CustomEnum::Three(..) => Box::new(iter_from!["0", "1"]),
+            }
+        }
+        fn member<'f>(&self, field: &'f str) -> Option<&dyn Queryable<'a>> {
+            match self {
+                CustomEnum::One => None,
+                CustomEnum::Two(s) => {
+                    if field == "0" {
+                        Some(s as _)
+                    } else {
+                        None
+                    }
+                }
+                CustomEnum::Three(b, i) => match field {
+                    "0" => Some(b as _),
+                    "1" => Some(i as _),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        fn data(&self) -> Option<Value> {
+            match self {
+                CustomEnum::One => Some(Value::String(String::from("One"))),
+                CustomEnum::Two(_) => Some(Value::String(String::from("Two"))),
+                CustomEnum::Three(_, _) => Some(Value::String(String::from("Three"))),
+            }
+        }
+    }
+
+    //   ./*[./*/*/c/1 ?= "Two"]/*/*/b
+    //   ./*[./*/*/c/1 ?= "Two"]/*/*/a
+    fn example() -> HashMap<i32, Vec<BTreeMap<i64, Custom>>> {
+        hash_map! {
+            1: vec![
+                btree_map! {
+                    55: Custom{a: 7,.. Custom::default()}
+                },
+                btree_map! {
+                    66: Custom {
+                        a: 55,
+                        ..Custom::default()
+                    },
+                    100: Custom{
+                        a: 5,
+                        b:"xxx".to_string(),
+                        c: vec![CustomEnum::One, CustomEnum::Two("s".to_string())]
+                    }
+                }
+            ],
+            ..(2..100): vec![],
+            ..(8..12): vec![
+                btree_map!{
+                    55: Custom::default()
+                },
+                btree_map!{
+                    6: Custom { a: 6,..Custom::default()},
+                    55: Custom {
+                        a: 444,
+                        b: "SDFDF".to_string(),
+                        c: vec![CustomEnum::One, CustomEnum::One, CustomEnum::One, CustomEnum::Three(vec![], 4)]
+                    }
+                }
+            ],
+        }
+    }
+
+    #[test]
+    fn select_integer() {
+        let t = 123;
+        let q = parse_query(".").unwrap();
+        let result: Vec<Value> = q.exec(&t).collect();
+        assert_eq!(result, vec_from![123]);
+    }
+
+    #[test]
+    fn select_nth_from_vec() {
+        let t = vec![7, 8, 9];
+        let q = parse_query("./2").unwrap();
+        dbg!(&q);
+        let result: Vec<Value> = q.exec(&t).collect();
+        assert_eq!(result, vec_from![9]);
+    }
+
+    #[test]
+    fn select_all_from_vec() {
+        let t = vec![7, 8, 9];
+        let q = parse_query("./*").unwrap();
+        dbg!(&q);
+        let result: Vec<Value> = q.exec(&t).collect();
+        assert_eq!(result, vec_from![7, 8, 9]);
+    }
+
+    #[test]
+    fn select_all_from_vec_with_filter() {
+        let t = vec![7, 8, 9];
+        let q = parse_query("./*[. > 7]").unwrap();
+        dbg!(&q);
+        let result: Vec<Value> = q.exec(&t).collect();
+        assert_eq!(result, vec_from![8, 9]);
+    }
+
+    #[test]
+    fn select_all_from_map() {
+        let t = hash_map! { 7: 3, 8: 4, 9: 5 };
+        let q = parse_query("./*").unwrap();
+        dbg!(&q);
+        let mut result: Vec<Value> = q.exec(&t).collect();
+        result.sort();
+        assert_eq!(result, vec_from![3, 4, 5]);
+    }
+
+    #[test]
+    fn test_nested_filter() {
+        let t: HashMap<i32, HashMap<String, i32>> = hash_map! {
+            7: hash_map_from! {
+                "a": 5,
+                "b": 6,
+            },
+            8: hash_map_from! {
+                "a": 15,
+                "b": 16,
+            },
+            9: hash_map_from! {
+                "a": 105,
+                "b": 106,
+            },
+        };
+        let q = parse_query("./*[./a = 15]/b").unwrap();
+        let result: Vec<Value> = q.exec(&t).collect();
+        assert_eq!(result, vec_from![16]);
+    }
+
+    #[test]
+    fn enums() {
+        let t = vec![
+            CustomEnum::One,
+            CustomEnum::Two(String::from("x")),
+            CustomEnum::Two(String::from("y")),
+            CustomEnum::Three(vec![CustomEnum::One], 5),
+        ];
+        let q = parse_query(r#"./*[. = "Two"]/0"#).unwrap();
+        let v: Vec<_> = q.exec(&t).collect();
+        assert_eq!(v, vec_from!["x", "y"])
+    }
+
+    #[test]
+    fn complex_query() {
+        let q = parse_query(r#"./*[./*/*/c/1 ?= "Two"]/*/*/a"#).unwrap();
+        let mut result: Vec<Value> = q.exec(&example()).collect();
+        result.sort();
+        assert_eq!(result, vec_from![5, 7, 55]);
     }
 }
