@@ -24,6 +24,7 @@ pub trait Queryable<'a> {
 pub enum Value {
     String(String),
     Int(i64),
+    Bool(bool),
 }
 
 pub struct ValueConvertError;
@@ -62,6 +63,11 @@ macro_rules! value_int {
                             v.try_into().map_err(|_| ValueConvertError)
                         },
                         Value::String(s) => s.parse().map_err(|_| ValueConvertError),
+                        &Value::Bool(b) => if b {
+                            1.try_into().map_err(|_| ValueConvertError)
+                        } else {
+                            0.try_into().map_err(|_| ValueConvertError)
+                        }
                     }
                 }
             }
@@ -102,6 +108,18 @@ value_int!(
     std::num::NonZeroIsize => isize,
 );
 
+impl From<bool> for Value {
+    fn from(b: bool) -> Value {
+        Value::Bool(b)
+    }
+}
+
+impl From<&bool> for Value {
+    fn from(b: &bool) -> Value {
+        Value::Bool(*b)
+    }
+}
+
 impl From<&str> for Value {
     fn from(v: &str) -> Value {
         Value::String(v.to_owned())
@@ -125,6 +143,7 @@ impl From<Value> for String {
         match v {
             Value::Int(i) => i.to_string(),
             Value::String(s) => s,
+            Value::Bool(b) => b.to_string(),
         }
     }
 }
@@ -145,6 +164,7 @@ impl fmt::Display for Value {
         match self {
             Value::String(v) => write!(f, "{}", v),
             Value::Int(v) => write!(f, "{}", v),
+            Value::Bool(v) => write!(f, "{}", v),
         }
     }
 }
@@ -156,9 +176,27 @@ impl<'a> fmt::Debug for &'a dyn Queryable<'a> {
     }
 }
 
+impl<'a> Queryable<'a> for bool {
+    fn data(&self) -> Option<Value> {
+        Some(self.into())
+    }
+}
+
+impl<'a> Queryable<'a> for &bool {
+    fn data(&self) -> Option<Value> {
+        Some((*self).into())
+    }
+}
+
 impl<'a> Queryable<'a> for str {
     fn data(&self) -> Option<Value> {
         Some(self.into())
+    }
+}
+
+impl<'a> Queryable<'a> for &str {
+    fn data(&self) -> Option<Value> {
+        Some((*self).into())
     }
 }
 

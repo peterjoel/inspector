@@ -64,7 +64,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d480125acf340d6a6e59dab69ae19d6fca3a906e1eade277671272cc8f73794b"
 
 [[package]]
-name = "insp"
+name = "inspector"
 version = "0.1.0"
 dependencies = [
  "inspector_core",
@@ -82,6 +82,11 @@ version = "0.1.0"
 [[package]]
 name = "inspector_macros"
 version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "inspector_pest"

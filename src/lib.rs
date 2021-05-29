@@ -1,5 +1,6 @@
 pub use inspector_core::*;
-
+#[cfg(feature = "derive")]
+pub use inspector_macros::Queryable;
 #[cfg(feature = "parser_pest")]
 pub use inspector_pest::parse_query;
 pub use inspector_query::*;
