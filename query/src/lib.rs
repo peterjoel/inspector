@@ -1,4 +1,4 @@
-use inspector_core::{Queryable, Value};
+use clouseau_core::{Queryable, Value};
 use std::iter;
 
 #[derive(Default, Debug)]

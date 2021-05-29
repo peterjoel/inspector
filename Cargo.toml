@@ -1,5 +1,5 @@
 [package]
-name = "inspector"
+name = "clouseau"
 version = "0.1.0"
 authors = ["Peter Hall <peterjoel@gmail.com>"]
 edition = "2018"
@@ -8,15 +8,15 @@ edition = "2018"
 members = ["core", "macros", "parse_pest", "query"]
 
 [features]
-default = ["pest", "derive"]
-pest = ["inspector_pest"]
-derive = ["inspector_macros"]
-arrayvec = ["inspector_core/arrayvec"]
+default = ["parser_pest", "derive"]
+parser_pest = ["clouseau_pest"]
+derive = ["clouseau_macros"]
+arrayvec = ["clouseau_core/arrayvec"]
 
 [dependencies]
-inspector_core = { path = "core" }
-inspector_macros = { path = "macros", optional = true }
-inspector_pest = { path = "parse_pest", optional = true }
-inspector_query = { path = "query" }
+clouseau_core = { path = "core" }
+clouseau_macros = { path = "macros", optional = true }
+clouseau_pest = { path = "parse_pest", optional = true }
+clouseau_query = { path = "query" }
 thiserror = "1"
 velcro = "0.5"

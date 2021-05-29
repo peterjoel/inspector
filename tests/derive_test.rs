@@ -1,5 +1,5 @@
-use inspector::parse_query;
-use inspector::Queryable;
+use clouseau::parse_query;
+use clouseau::Queryable;
 use velcro::vec_from;
 
 #[derive(Debug, Queryable)]

@@ -29,17 +29,17 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
     };
     quote! {
         // TODO support generics
-        impl<'a> inspector::Queryable<'a> for #name {
-            fn keys(&'a self) -> Box<dyn Iterator<Item = inspector::Value> + 'a> {
+        impl<'a> clouseau::Queryable<'a> for #name {
+            fn keys(&'a self) -> Box<dyn Iterator<Item = clouseau::Value> + 'a> {
                 #keys_body
             }
-            fn member<'f>(&'a self, field_name: &'f inspector::Value) -> Option<&'a dyn inspector::Queryable<'a>> {
+            fn member<'f>(&'a self, field_name: &'f clouseau::Value) -> Option<&'a dyn clouseau::Queryable<'a>> {
                 #member_body
             }
-            fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn inspector::Queryable<'a>> + 'a> {
+            fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn clouseau::Queryable<'a>> + 'a> {
                 #all_body
             }
-            fn data(&self) -> Option<inspector::Value> {
+            fn data(&self) -> Option<clouseau::Value> {
                 #data_body
             }
         }
@@ -51,12 +51,12 @@ fn struct_keys_body(data: &DataStruct) -> TokenStream {
         if let Some(ident) = &field.ident {
             let key = ident.to_string();
             quote! {
-                inspector::Value::String(#key.to_string())
+                clouseau::Value::String(#key.to_string())
             }
         } else {
             let index = Literal::i64_unsuffixed(index as i64);
             quote! {
-                inspector::Value::Int(#index)
+                clouseau::Value::Int(#index)
             }
         }
     });
@@ -78,9 +78,9 @@ fn struct_member_body(data: &DataStruct) -> TokenStream {
                 quote! {
                     match field_name {
                         #(
-                            inspector::Value::Int(#indices) => { Some(&self.#indices as _) },
+                            clouseau::Value::Int(#indices) => { Some(&self.#indices as _) },
                         )*
-                        inspector::Value::String(s) => match s.parse::<usize>() {
+                        clouseau::Value::String(s) => match s.parse::<usize>() {
                             #(Ok(#indices2) => Some(&self.#indices2 as _),)*
                             _ => None,
                         }
@@ -93,7 +93,7 @@ fn struct_member_body(data: &DataStruct) -> TokenStream {
             let names = fields.named.iter().filter_map(|named| named.ident.as_ref());
             quote! {
                 match field_name {
-                    inspector::Value::String(s) => {
+                    clouseau::Value::String(s) => {
                         match s.as_str() {
                             #(stringify!(#names) => Some(&self.#names as _),)*
                             _ => None,
@@ -143,7 +143,7 @@ fn enum_keys_body(data: &DataEnum) -> TokenStream {
             Fields::Unnamed(fields) => {
                 let indices = (0..fields.unnamed.len() as i64).map(|i| Literal::i64_unsuffixed(i));
                 quote! {
-                    Self::#name(..) => Box::from(vec![#(inspector::Value::Int(#indices)),*].into_iter())
+                    Self::#name(..) => Box::from(vec![#(clouseau::Value::Int(#indices)),*].into_iter())
                 }
             }
             Fields::Named(fields) => {
@@ -153,7 +153,7 @@ fn enum_keys_body(data: &DataEnum) -> TokenStream {
                     .filter_map(|field| field.ident.as_ref())
                     .map(Ident::to_string);
                 quote! {
-                    Self::#name { .. } => Box::from(vec![#(inspector::Value::from(#names)),*].into_iter())
+                    Self::#name { .. } => Box::from(vec![#(clouseau::Value::from(#names)),*].into_iter())
                 }
             }
             Fields::Unit => {
@@ -185,9 +185,9 @@ fn enum_member_body(data: &DataEnum) -> TokenStream {
                     Self::#name(#(#bindings),*) => {
                         match field_name {
                             #(
-                                inspector::Value::Int(#indices) => { Some(#bindings2 as _) },
+                                clouseau::Value::Int(#indices) => { Some(#bindings2 as _) },
                             )*
-                            inspector::Value::String(s) => if let Ok(i) = s.parse::<i64>() {
+                            clouseau::Value::String(s) => if let Ok(i) = s.parse::<i64>() {
                                 match i {
                                     #(#indices2 => Some(#bindings3 as _),)*
                                     _ => None,
@@ -204,7 +204,7 @@ fn enum_member_body(data: &DataEnum) -> TokenStream {
                 quote! {
                     Self::#name { #(#bindings),* } => {
                         match field_name {
-                            inspector::Value::String(s) => match s.as_str() {
+                            clouseau::Value::String(s) => match s.as_str() {
                                 #(stringify!(#bindings2) => { Some(#bindings2 as _) },)*
                                 _ => None,
                             }
@@ -266,17 +266,17 @@ fn enum_data_body(data: &DataEnum) -> TokenStream {
         match &variant.fields {
             Fields::Unnamed(_) => {
                 quote! {
-                    Self::#name(..) => Some(inspector::Value::String(stringify!(#name).to_string()))
+                    Self::#name(..) => Some(clouseau::Value::String(stringify!(#name).to_string()))
                 }
             }
             Fields::Named(_) => {
                 quote! {
-                    Self::#name { .. } => Some(inspector::Value::String(stringify!(#name).to_string()))
+                    Self::#name { .. } => Some(clouseau::Value::String(stringify!(#name).to_string()))
                 }
             }
             Fields::Unit => {
                 quote! {
-                    Self::#name => Some(inspector::Value::String(stringify!(#name).to_string()))
+                    Self::#name => Some(clouseau::Value::String(stringify!(#name).to_string()))
                 }
             }
         }

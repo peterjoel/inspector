@@ -1,5 +1,5 @@
-use inspector_core::*;
-use inspector_query::*;
+use clouseau_core::*;
+use clouseau_query::*;
 use pest::error::Error as PestError;
 use pest::iterators::Pair;
 use pest::Parser;

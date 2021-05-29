@@ -1,9 +1,9 @@
-pub use inspector_core::*;
+pub use clouseau_core::*;
 #[cfg(feature = "derive")]
-pub use inspector_macros::Queryable;
+pub use clouseau_macros::Queryable;
 #[cfg(feature = "parser_pest")]
-pub use inspector_pest::parse_query;
-pub use inspector_query::*;
+pub use clouseau_pest::parse_query;
+pub use clouseau_query::*;
 
 #[cfg(test)]
 #[cfg(feature = "parser_pest")]
