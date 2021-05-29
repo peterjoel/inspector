@@ -1,7 +1,4 @@
-mod parser;
-use super::Queryable;
-pub use parser::parse_query;
-use std::fmt;
+use inspector_core::{Queryable, Value};
 use std::iter;
 
 #[derive(Default, Debug)]
@@ -23,7 +20,7 @@ pub struct Segment {
 #[derive(Debug)]
 pub enum SegmentType {
     Root,
-    Named(String),
+    Named(Value),
     All,
 }
 
@@ -51,6 +48,10 @@ pub enum Compare {
 }
 
 impl Query {
+    pub fn new(path: Path) -> Self {
+        Self { path }
+    }
+
     pub fn exec<'a>(&'a self, q: &'a dyn Queryable<'a>) -> impl Iterator<Item = Value> + 'a {
         self.path.exec(q)
     }
@@ -174,57 +175,6 @@ impl From<SegmentType> for Segment {
         Segment {
             segment_type,
             filter: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub enum Value {
-    String(String),
-    Int(i64),
-}
-
-impl From<i64> for Value {
-    fn from(v: i64) -> Value {
-        Value::Int(v)
-    }
-}
-
-impl From<u64> for Value {
-    fn from(v: u64) -> Value {
-        Value::Int(v as i64)
-    }
-}
-
-impl From<i32> for Value {
-    fn from(v: i32) -> Value {
-        Value::Int(v as i64)
-    }
-}
-
-impl From<u32> for Value {
-    fn from(v: u32) -> Value {
-        Value::Int(v as i64)
-    }
-}
-
-impl From<String> for Value {
-    fn from(v: String) -> Value {
-        Value::String(v)
-    }
-}
-
-impl From<&str> for Value {
-    fn from(v: &str) -> Value {
-        Value::String(v.to_string())
-    }
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Value::String(v) => write!(f, "{}", v),
-            Value::Int(v) => write!(f, "{}", v),
         }
     }
 }

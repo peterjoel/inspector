@@ -1,4 +1,5 @@
-use super::*;
+use inspector_core::*;
+use inspector_query::*;
 use pest::error::Error as PestError;
 use pest::iterators::Pair;
 use pest::Parser;
@@ -18,7 +19,7 @@ pub enum Error {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Parser)]
-#[grammar = "query/query.pest"]
+#[grammar = "query.pest"]
 pub struct QueryParser;
 
 pub fn parse_query(input: &str) -> Result<Query> {
@@ -26,9 +27,9 @@ pub fn parse_query(input: &str) -> Result<Query> {
         .next()
         .ok_or(Error::Pest)?;
     dbg!("AST");
-    Ok(Query {
-        path: parse_path(ast.into_inner().next().ok_or(Error::Pest)?)?,
-    })
+    Ok(Query::new(parse_path(
+        ast.into_inner().next().ok_or(Error::Pest)?,
+    )?))
 }
 
 fn parse_path(pair: Pair<Rule>) -> Result<Path> {
@@ -52,9 +53,7 @@ fn parse_path(pair: Pair<Rule>) -> Result<Path> {
 fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     match pair.as_rule() {
         Rule::wildcard => Ok(SegmentType::All.to_segment()),
-        Rule::ident | Rule::integer => {
-            Ok(SegmentType::Named(pair.as_str().to_string()).to_segment())
-        }
+        Rule::ident | Rule::integer => Ok(SegmentType::Named(pair.as_str().into()).to_segment()),
         _ => Err(Error::Pest),
     }
 }

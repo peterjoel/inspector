@@ -67,11 +67,40 @@ checksum = "d480125acf340d6a6e59dab69ae19d6fca3a906e1eade277671272cc8f73794b"
 name = "insp"
 version = "0.1.0"
 dependencies = [
+ "inspector_core",
+ "inspector_macros",
+ "inspector_pest",
+ "inspector_query",
+ "thiserror",
+ "velcro",
+]
+
+[[package]]
+name = "inspector_core"
+version = "0.1.0"
+
+[[package]]
+name = "inspector_macros"
+version = "0.1.0"
+
+[[package]]
+name = "inspector_pest"
+version = "0.1.0"
+dependencies = [
+ "inspector_core",
+ "inspector_query",
  "pest",
  "pest_derive",
  "reflection",
  "thiserror",
  "velcro",
+]
+
+[[package]]
+name = "inspector_query"
+version = "0.1.0"
+dependencies = [
+ "inspector_core",
 ]
 
 [[package]]

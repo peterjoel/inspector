@@ -1,125 +1,20 @@
-mod query;
+pub use inspector_core::*;
 
-use query::Value;
-use std::collections::*;
-use std::fmt::{self, Debug};
-use std::hash::Hash;
-use std::iter;
-use std::str::FromStr;
-use velcro::iter;
-
-pub use query::parse_query;
-
-pub trait Queryable<'a> {
-    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        Box::new(iter::empty())
-    }
-    fn member<'f>(&'a self, _: &'f str) -> Option<&dyn Queryable<'a>> {
-        None
-    }
-    fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
-        Box::new(iter::empty())
-    }
-    fn data(&self) -> Option<Value> {
-        None
-    }
-    fn display(&self) -> Option<String> {
-        None
-    }
-}
-
-impl<'a> Queryable<'a> for i32 {
-    fn data(&self) -> Option<Value> {
-        Some(Value::Int((*self).into()))
-    }
-    fn display(&self) -> Option<String> {
-        Some(format!("{}", self))
-    }
-}
-impl<'a> Queryable<'a> for i64 {
-    fn data(&self) -> Option<Value> {
-        Some(Value::Int((*self).into()))
-    }
-    fn display(&self) -> Option<String> {
-        Some(format!("{}", self))
-    }
-}
-impl<'a> Queryable<'a> for &str {
-    fn data(&self) -> Option<Value> {
-        Some(Value::String(self.to_string()))
-    }
-    fn display(&self) -> Option<String> {
-        Some(format!("{}", self))
-    }
-}
-
-impl<'a> Queryable<'a> for String {
-    fn data(&self) -> Option<Value> {
-        Some(Value::String(self.clone()))
-    }
-    fn display(&self) -> Option<String> {
-        Some(format!("{}", self))
-    }
-}
-
-impl<'a, K: Queryable<'a> + Hash + Eq + FromStr + Debug, V: Queryable<'a>> Queryable<'a>
-    for HashMap<K, V>
-where
-    <K as FromStr>::Err: Debug,
-{
-    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        Box::from(self.keys().filter_map(|k| k.display()))
-    }
-    fn member<'f>(&'a self, field: &'f str) -> Option<&dyn Queryable<'a>> {
-        K::from_str(field)
-            .ok()
-            .and_then(|field| self.get(&field))
-            .map(|v| v as _)
-    }
-    fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
-        Box::new(self.values().map(|v| v as _))
-    }
-}
-
-impl<'a, K: Queryable<'a> + Ord + Eq + FromStr, V: Queryable<'a>> Queryable<'a> for BTreeMap<K, V> {
-    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        Box::from(self.keys().filter_map(|k| k.display()))
-    }
-    fn member<'f>(&'a self, field: &'f str) -> Option<&dyn Queryable<'a>> {
-        K::from_str(field)
-            .ok()
-            .and_then(|field| self.get(&field))
-            .map(|v| v as _)
-    }
-    fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
-        Box::new(self.values().map(|v| v as _))
-    }
-}
-
-impl<'a, T: Queryable<'a>> Queryable<'a> for Vec<T> {
-    fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        Box::from((0..self.len()).map(|v| v.to_string()))
-    }
-    fn member<'f>(&'a self, field: &'f str) -> Option<&dyn Queryable<'a>> {
-        usize::from_str(field)
-            .ok()
-            .and_then(|index| self.get(index))
-            .map(|v| v as _)
-    }
-    fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
-        Box::new(self.iter().map(|v| v as _))
-    }
-}
-
-impl<'a> Debug for &'a dyn Queryable<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let keys: Vec<_> = self.keys().collect();
-        write!(f, "{:?}", keys)
-    }
-}
+#[cfg(feature = "parser_pest")]
+pub use inspector_pest::parse_query;
+pub use inspector_query::*;
 
 #[cfg(test)]
+#[cfg(feature = "parser_pest")]
 mod tests {
+
+    use std::collections::*;
+    use std::fmt::Debug;
+    use std::iter;
+    use velcro::iter;
+
+    use std::convert::TryInto;
+
     use super::*;
     use velcro::vec;
     use velcro::*;
@@ -132,11 +27,12 @@ mod tests {
     }
 
     impl<'a> Queryable<'a> for Custom {
-        fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-            Box::from(iter!["a", "b", "c"].map(str::to_string))
+        fn keys(&'a self) -> Box<dyn Iterator<Item = Value> + 'a> {
+            Box::from(iter!["a", "b", "c"].map(Value::from))
         }
-        fn member<'f>(&self, field: &'f str) -> Option<&dyn Queryable<'a>> {
-            match field {
+
+        fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+            match field.to_string().as_str() {
                 "a" => Some(&self.a as _),
                 "b" => Some(&self.b as _),
                 "c" => Some(&self.c as _),
@@ -153,29 +49,29 @@ mod tests {
     }
 
     impl<'a> Queryable<'a> for CustomEnum {
-        fn keys(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        fn keys(&'a self) -> Box<dyn Iterator<Item = Value> + 'a> {
             match self {
                 CustomEnum::One => Box::new(iter::empty()),
-                CustomEnum::Two(_) => Box::new(iter::once("0".to_string())),
+                CustomEnum::Two(_) => Box::new(iter::once(Value::from("0"))),
                 CustomEnum::Three(..) => Box::new(iter_from!["0", "1"]),
             }
         }
-        fn member<'f>(&self, field: &'f str) -> Option<&dyn Queryable<'a>> {
+        fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+            let index: usize = field.try_into().ok()?;
             match self {
                 CustomEnum::One => None,
                 CustomEnum::Two(s) => {
-                    if field == "0" {
+                    if index == 0 {
                         Some(s as _)
                     } else {
                         None
                     }
                 }
-                CustomEnum::Three(b, i) => match field {
-                    "0" => Some(b as _),
-                    "1" => Some(i as _),
+                CustomEnum::Three(b, i) => match index {
+                    0 => Some(b as _),
+                    1 => Some(i as _),
                     _ => None,
                 },
-                _ => None,
             }
         }
         fn data(&self) -> Option<Value> {
@@ -187,8 +83,6 @@ mod tests {
         }
     }
 
-    //   ./*[./*/*/c/1 ?= "Two"]/*/*/b
-    //   ./*[./*/*/c/1 ?= "Two"]/*/*/a
     fn example() -> HashMap<i32, Vec<BTreeMap<i64, Custom>>> {
         hash_map! {
             1: vec![
