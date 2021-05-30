@@ -1,14 +1,14 @@
 use super::{Value, ValueIter};
 
-pub fn count<'a>(input: ValueIter<'a>) -> ValueIter<'a> {
+pub fn count(input: ValueIter<'_>) -> ValueIter<'_> {
     ValueIter::once(input.count())
 }
 
-pub fn sum<'a>(input: ValueIter<'a>) -> ValueIter<'a> {
+pub fn sum(input: ValueIter<'_>) -> ValueIter<'_> {
     ValueIter::once(input.filter_map(Value::into_int).sum::<i64>())
 }
 
-pub fn max<'a>(input: ValueIter<'a>) -> ValueIter<'a> {
+pub fn max(input: ValueIter<'_>) -> ValueIter<'_> {
     ValueIter(Box::from(
         input
             .filter_map(Value::into_int)
@@ -18,7 +18,7 @@ pub fn max<'a>(input: ValueIter<'a>) -> ValueIter<'a> {
     ))
 }
 
-pub fn min<'a>(input: ValueIter<'a>) -> ValueIter<'a> {
+pub fn min(input: ValueIter<'_>) -> ValueIter<'_> {
     ValueIter(Box::from(
         input
             .filter_map(Value::into_int)

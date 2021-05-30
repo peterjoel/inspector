@@ -4,10 +4,12 @@ use clouseau_core::{Queryable, TreeIter, Value, ValueIter};
 use std::collections::HashMap;
 use std::iter;
 
+type ValueFn = dyn for<'a> Fn(ValueIter<'a>) -> ValueIter<'a>;
+
 #[derive(Default)]
 pub struct Context {
     vars: HashMap<String, Value>,
-    fns: HashMap<String, Box<dyn for<'a> Fn(ValueIter<'a>) -> ValueIter<'a>>>,
+    fns: HashMap<String, Box<ValueFn>>,
 }
 
 impl Context {
@@ -260,7 +262,7 @@ impl SegmentType {
         }
     }
 
-    pub fn to_segment(self) -> Segment {
+    pub fn into_segment(self) -> Segment {
         Segment {
             segment_type: self,
             filter: None,

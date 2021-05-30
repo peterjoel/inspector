@@ -15,9 +15,6 @@ pub struct ValueIter<'a>(pub Box<dyn Iterator<Item = Value> + 'a>);
 pub struct TreeIter<'a>(pub Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a>);
 
 pub trait Queryable<'a> {
-    fn keys(&'a self) -> ValueIter<'a> {
-        ValueIter::empty()
-    }
     fn member<'f>(&'a self, _: &'f Value) -> Option<&'a dyn Queryable<'a>> {
         None
     }
@@ -86,13 +83,6 @@ impl<'a> Iterator for TreeIter<'a> {
 }
 
 impl<'a> Queryable<'a> for ValueOrQueryable<'a> {
-    fn keys(&'a self) -> ValueIter<'a> {
-        if let ValueOrQueryable::Queryable(q) = self {
-            q.keys()
-        } else {
-            ValueIter::empty()
-        }
-    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'a>> {
         if let ValueOrQueryable::Queryable(q) = self {
             q.member(field)

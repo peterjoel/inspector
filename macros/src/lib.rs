@@ -12,15 +12,13 @@ pub fn derive_queryable(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 fn impl_queryable(input: DeriveInput) -> TokenStream {
     let name = &input.ident;
     // let generics = &input.generics;
-    let (keys_body, member_body, all_body, data_body) = match &input.data {
+    let (member_body, all_body, data_body) = match &input.data {
         Data::Struct(data) => (
-            struct_keys_body(data),
             struct_member_body(data),
             struct_all_body(data),
             struct_data_body(data),
         ),
         Data::Enum(data) => (
-            enum_keys_body(data),
             enum_member_body(data),
             enum_all_body(data),
             enum_data_body(data),
@@ -30,9 +28,6 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
     quote! {
         // TODO support generics
         impl<'a> clouseau::Queryable<'a> for #name {
-            fn keys(&'a self) -> clouseau::ValueIter<'a> {
-                clouseau::ValueIter(#keys_body)
-            }
             fn member<'f>(&'a self, field_name: &'f clouseau::Value) -> Option<&'a dyn clouseau::Queryable<'a>> {
                 #member_body
             }
@@ -43,25 +38,6 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
                 #data_body
             }
         }
-    }
-}
-
-fn struct_keys_body(data: &DataStruct) -> TokenStream {
-    let keys = data.fields.iter().enumerate().map(|(index, field)| {
-        if let Some(ident) = &field.ident {
-            let key = ident.to_string();
-            quote! {
-                clouseau::Value::String(#key.to_string())
-            }
-        } else {
-            let index = Literal::i64_unsuffixed(index as i64);
-            quote! {
-                clouseau::Value::Int(#index)
-            }
-        }
-    });
-    quote! {
-        Box::from(vec![#(#keys),*].into_iter())
     }
 }
 
@@ -133,40 +109,6 @@ fn struct_data_body(data: &DataStruct) -> TokenStream {
             quote! { self.0.data() }
         }
         _ => quote! { None },
-    }
-}
-
-fn enum_keys_body(data: &DataEnum) -> TokenStream {
-    let variants = data.variants.iter().map(|variant| {
-        let name = &variant.ident;
-        match &variant.fields {
-            Fields::Unnamed(fields) => {
-                let indices = (0..fields.unnamed.len() as i64).map(|i| Literal::i64_unsuffixed(i));
-                quote! {
-                    Self::#name(..) => Box::from(vec![#(clouseau::Value::Int(#indices)),*].into_iter())
-                }
-            }
-            Fields::Named(fields) => {
-                let names = fields
-                    .named
-                    .iter()
-                    .filter_map(|field| field.ident.as_ref())
-                    .map(Ident::to_string);
-                quote! {
-                    Self::#name { .. } => Box::from(vec![#(clouseau::Value::from(#names)),*].into_iter())
-                }
-            }
-            Fields::Unit => {
-                quote! {
-                    Self::#name => Box::from(std::iter::empty())
-                }
-            }
-        }
-    });
-    quote! {
-        match self {
-            #(#variants),*
-        }
     }
 }
 

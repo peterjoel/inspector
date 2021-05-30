@@ -1,4 +1,4 @@
-use super::{Queryable, TreeIter, Value, ValueIter};
+use super::{Queryable, TreeIter, Value};
 use arrayvec::{Array, ArrayVec};
 
 impl<'a, T> Queryable<'a> for ArrayVec<T>
@@ -6,9 +6,6 @@ where
     T: Array,
     <T as Array>::Item: Queryable<'a>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        ValueIter(Box::from((0..self.len()).map(Value::from)))
-    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'a>> {
         match field {
             &Value::Int(i) if i >= 0 => self.get(i as usize).map(|val| val as _),

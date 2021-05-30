@@ -1,4 +1,4 @@
-use crate::{Queryable, TreeIter, Value, ValueConvertError, ValueIter};
+use crate::{Queryable, TreeIter, Value, ValueConvertError};
 use std::borrow::Cow;
 use std::collections::*;
 use std::convert::{TryFrom, TryInto};
@@ -145,13 +145,6 @@ impl fmt::Display for Value {
     }
 }
 
-impl<'a> fmt::Debug for &'a dyn Queryable<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let keys: Vec<_> = self.keys().collect();
-        write!(f, "{:?}", keys)
-    }
-}
-
 impl<'a> Queryable<'a> for bool {
     fn data(&self) -> Option<Value> {
         Some(self.into())
@@ -184,7 +177,7 @@ impl<'a> Queryable<'a> for String {
 
 impl<'a> Queryable<'a> for &String {
     fn data(&self) -> Option<Value> {
-        Some(self.clone().into())
+        Some((*self).into())
     }
 }
 
@@ -196,10 +189,6 @@ where
     Value: From<K>,
     K: TryFrom<Value>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        ValueIter(Box::from(self.keys().map(|k| k.clone().into())))
-    }
-
     fn member<'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'a>> {
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
@@ -217,10 +206,6 @@ where
     Value: From<&'a K>,
     K: TryFrom<Value>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        ValueIter(Box::from(self.keys().map(|k| k.into())))
-    }
-
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
@@ -253,10 +238,6 @@ impl<'a, T> Queryable<'a> for Vec<T>
 where
     T: Queryable<'a>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        ValueIter(Box::from((0..self.len()).map(|v| v.into())))
-    }
-
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
@@ -271,10 +252,6 @@ impl<'a, T> Queryable<'a> for VecDeque<T>
 where
     T: Queryable<'a>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        ValueIter(Box::from((0..self.len()).map(|v| v.into())))
-    }
-
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
@@ -289,10 +266,6 @@ impl<'a, T> Queryable<'a> for Box<T>
 where
     T: Queryable<'a>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        self.as_ref().keys()
-    }
-
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         self.as_ref().member(field)
     }
@@ -310,14 +283,6 @@ impl<'a, T> Queryable<'a> for Option<T>
 where
     T: Queryable<'a>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        if let Some(val) = self.as_ref() {
-            val.keys()
-        } else {
-            ValueIter::empty()
-        }
-    }
-
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         self.as_ref().and_then(|val| val.member(field))
     }
@@ -339,14 +304,6 @@ impl<'a, T, E> Queryable<'a> for Result<T, E>
 where
     T: Queryable<'a>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        if let Ok(val) = self.as_ref() {
-            val.keys()
-        } else {
-            ValueIter::empty()
-        }
-    }
-
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         self.as_ref().ok().and_then(|val| val.member(field))
     }
@@ -374,10 +331,6 @@ impl<'a, T> Queryable<'a> for std::cmp::Reverse<T>
 where
     T: Queryable<'a>,
 {
-    fn keys(&'a self) -> ValueIter<'a> {
-        self.0.keys()
-    }
-
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         self.0.member(field)
     }
@@ -402,10 +355,6 @@ macro_rules! impl_tuples {
         where
             $($t: Queryable<'a>),+
         {
-            fn keys(&'a self) -> ValueIter<'a> {
-                ValueIter(Box::from(vec![$($ind),+].into_iter().map(Value::from)))
-            }
-
             fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
                 #[allow(clippy::collapsible_match)]
                 match field {
@@ -445,12 +394,8 @@ macro_rules! impl_arrays {
         where
             T: Queryable<'a>
         {
-            fn keys(&'a self) -> ValueIter<'a> {
-                let vec: Vec<i64> = vec![$($ind),*];
-                ValueIter(Box::from(vec.into_iter().map(Value::from)))
-            }
-
             fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+                #[allow(clippy::collapsible_match)]
                 match field {
                     Value::Int(i) => {
                         match i {

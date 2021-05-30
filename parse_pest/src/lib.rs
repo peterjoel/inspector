@@ -34,9 +34,9 @@ pub fn parse_query(input: &str) -> Result<Query> {
 fn parse_path(pair: Pair<Rule>) -> Result<Path> {
     pair.into_inner().fold(Ok(Path::default()), |path, pair| {
         path.and_then(|path| match pair.as_rule() {
-            Rule::absolute => Ok(path.append_segment(SegmentType::Root.to_segment())),
+            Rule::absolute => Ok(path.append_segment(SegmentType::Root.into_segment())),
             Rule::relative | Rule::current => {
-                Ok(path.append_segment(SegmentType::Current.to_segment()))
+                Ok(path.append_segment(SegmentType::Current.into_segment()))
             }
             Rule::segment => {
                 Ok(path
@@ -65,8 +65,8 @@ fn parse_var(pair: Pair<Rule>) -> Result<String> {
 
 fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     match pair.as_rule() {
-        Rule::wildcard => Ok(SegmentType::Children.to_segment()),
-        Rule::ident | Rule::integer => Ok(SegmentType::Child(pair.as_str().into()).to_segment()),
+        Rule::wildcard => Ok(SegmentType::Children.into_segment()),
+        Rule::ident | Rule::integer => Ok(SegmentType::Child(pair.as_str().into()).into_segment()),
         _ => Err(Error::Pest),
     }
 }
