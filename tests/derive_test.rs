@@ -1,5 +1,5 @@
 use clouseau::parse_query;
-use clouseau::Queryable;
+use clouseau::{query::Context, Queryable};
 use velcro::vec_from;
 
 #[derive(Debug, Queryable)]
@@ -69,7 +69,8 @@ fn query_custom_struct() {
         ],
     });
 
+    let ctx = Context::default();
     let q = parse_query("./v/*[./1/a = 1]/2/b").unwrap();
-    let res: Vec<_> = q.exec(&f).collect();
+    let res: Vec<_> = ctx.exec(&q, &f).collect();
     assert_eq!(res, vec_from!["ciao"]);
 }

@@ -75,7 +75,6 @@ dependencies = [
  "clouseau_query",
  "pest",
  "pest_derive",
- "reflection",
  "thiserror",
  "velcro",
 ]
@@ -110,12 +109,6 @@ checksum = "ffdf9f34f1447443d37393cc6c2b8313aebddcd96906caf34e54c68d8e57d7bd"
 dependencies = [
  "typenum",
 ]
-
-[[package]]
-name = "indexed"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d480125acf340d6a6e59dab69ae19d6fca3a906e1eade277671272cc8f73794b"
 
 [[package]]
 name = "maplit"
@@ -191,15 +184,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reflection"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f477a471bda4d66e69c64a07ded91ac097ca12614b767b53da3dbd439483c514"
-dependencies = [
- "trees",
-]
-
-[[package]]
 name = "sha-1"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -240,15 +224,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "trees"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "afa1821e85be4f56cc5bd08bdbc32c0e26d105c90bed9c637992f6c7f747c180"
-dependencies = [
- "indexed",
 ]
 
 [[package]]

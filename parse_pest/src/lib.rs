@@ -48,6 +48,16 @@ fn parse_path(pair: Pair<Rule>) -> Result<Path> {
     })
 }
 
+fn parse_var(pair: Pair<Rule>) -> Result<String> {
+    let var = pair.into_inner().next().ok_or(Error::Pest)?;
+    let tokens = var.as_str();
+    let rule = var.as_rule();
+    match rule {
+        Rule::ident => Ok(tokens.to_string()),
+        _ => Err(Error::Pest),
+    }
+}
+
 fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     match pair.as_rule() {
         Rule::wildcard => Ok(SegmentType::Children.to_segment()),
@@ -67,8 +77,9 @@ fn parse_filter(pair: Pair<Rule>) -> Result<Pred> {
         .next()
         .ok_or(Error::Pest)?;
     let rhs = match op_rhs.as_rule() {
-        Rule::literal => PathOrValue::Value(parse_value(op_rhs)?),
-        Rule::path => PathOrValue::Path(parse_path(op_rhs)?),
+        Rule::literal => OperatorRhs::Value(parse_value(op_rhs)?),
+        Rule::path => OperatorRhs::Path(parse_path(op_rhs)?),
+        Rule::var => OperatorRhs::Var(parse_var(op_rhs)?),
         _ => return Err(Error::Pest),
     };
     Ok(Pred::new(path, pred, rhs, match_type))

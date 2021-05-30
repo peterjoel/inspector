@@ -1,3 +1,4 @@
+use clouseau::query::Context;
 use clouseau::*;
 use std::collections::*;
 use std::fmt::Debug;
@@ -56,44 +57,45 @@ fn example() -> HashMap<i32, Vec<BTreeMap<i64, Custom>>> {
 #[test]
 fn select_integer() {
     let t = 123;
+    let ctx = Context::default();
     let q = parse_query(".").unwrap();
-    let result: Vec<Value> = q.exec(&t).collect();
+    let result: Vec<Value> = ctx.exec(&q, &t).collect();
     assert_eq!(result, vec_from![123]);
 }
 
 #[test]
 fn select_nth_from_vec() {
     let t = vec![7, 8, 9];
+    let ctx = Context::default();
     let q = parse_query("./2").unwrap();
-    dbg!(&q);
-    let result: Vec<Value> = q.exec(&t).collect();
+    let result: Vec<Value> = ctx.exec(&q, &t).collect();
     assert_eq!(result, vec_from![9]);
 }
 
 #[test]
 fn select_all_from_vec() {
     let t = vec![7, 8, 9];
+    let ctx = Context::default();
     let q = parse_query("./*").unwrap();
-    dbg!(&q);
-    let result: Vec<Value> = q.exec(&t).collect();
+    let result: Vec<Value> = ctx.exec(&q, &t).collect();
     assert_eq!(result, vec_from![7, 8, 9]);
 }
 
 #[test]
 fn select_all_from_vec_with_filter() {
     let t = vec![7, 8, 9];
+    let ctx = Context::default();
     let q = parse_query("./*[. > 7]").unwrap();
-    dbg!(&q);
-    let result: Vec<Value> = q.exec(&t).collect();
+    let result: Vec<Value> = ctx.exec(&q, &t).collect();
     assert_eq!(result, vec_from![8, 9]);
 }
 
 #[test]
 fn select_all_from_map() {
     let t = hash_map! { 7: 3, 8: 4, 9: 5 };
+    let ctx = Context::default();
     let q = parse_query("./*").unwrap();
-    dbg!(&q);
-    let mut result: Vec<Value> = q.exec(&t).collect();
+    let mut result: Vec<Value> = ctx.exec(&q, &t).collect();
     result.sort();
     assert_eq!(result, vec_from![3, 4, 5]);
 }
@@ -114,8 +116,9 @@ fn test_nested_filter() {
             "b": 106,
         },
     };
+    let ctx = Context::default();
     let q = parse_query("./*[./a = 15]/b").unwrap();
-    let result: Vec<Value> = q.exec(&t).collect();
+    let result: Vec<Value> = ctx.exec(&q, &t).collect();
     assert_eq!(result, vec_from![16]);
 }
 
@@ -127,15 +130,17 @@ fn enums() {
         CustomEnum::Two(String::from("y")),
         CustomEnum::Three(vec![CustomEnum::One], 5),
     ];
+    let ctx = Context::default();
     let q = parse_query(r#"./*[. = "Two"]/0"#).unwrap();
-    let v: Vec<_> = q.exec(&t).collect();
+    let v: Vec<_> = ctx.exec(&q, &t).collect();
     assert_eq!(v, vec_from!["x", "y"])
 }
 
 #[test]
 fn complex_query() {
+    let ctx = Context::default();
     let q = parse_query(r#"./*[./*/*/c/1 ?= "Two"]/*/*/a"#).unwrap();
-    let mut result: Vec<Value> = q.exec(&example()).collect();
+    let mut result: Vec<Value> = ctx.exec(&q, &example()).collect();
     result.sort();
     assert_eq!(result, vec_from![5, 7, 55]);
 }
@@ -151,15 +156,16 @@ fn compare_paths() {
         a: vec![10, 11, 12, 13, 14],
         b: vec![0, 3, 6, 12, 15],
     };
+    let ctx = Context::default();
     let q = parse_query(r#"/b/*[. ?= /a/*]"#).unwrap();
-    let result: Vec<Value> = q.exec(&d).collect();
+    let result: Vec<Value> = ctx.exec(&q, &d).collect();
     assert_eq!(result, vec_from![12]);
 
     let q = parse_query(r#"/b/*[. ?>= /a/*]"#).unwrap();
-    let result: Vec<Value> = q.exec(&d).collect();
+    let result: Vec<Value> = ctx.exec(&q, &d).collect();
     assert_eq!(result, vec_from![12, 15]);
 
     let q = parse_query(r#"/b/*[. >= /a/*]"#).unwrap();
-    let result: Vec<Value> = q.exec(&d).collect();
+    let result: Vec<Value> = ctx.exec(&q, &d).collect();
     assert_eq!(result, vec_from![15]);
 }

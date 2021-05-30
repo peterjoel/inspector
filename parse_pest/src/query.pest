@@ -6,10 +6,11 @@ segment = { wildcard | ident | integer }
 wildcard = @{ "*" }
 filter = { "[" ~ filter_cond ~ "]" } 
 filter_cond = { path ~ op_compare ~ op_rhs }
-op_rhs = { path | literal }
+op_rhs = { path | literal | var }
+var = { "$" ~ ident }
 op_compare = @{ "?"? ~ ("<=" | ">=" | "=" | ">" | "<") }
 ident = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
-literal = {integer | string | bool }
+literal = { integer | string | bool }
 bool = @{ "true" | "false" }
 integer = @{ "0" | (!("0") ~ ASCII_DIGIT+) }
 // TODO handle escape sequences in strings
