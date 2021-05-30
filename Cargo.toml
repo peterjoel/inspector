@@ -3,6 +3,8 @@ name = "clouseau"
 version = "0.1.0"
 authors = ["Peter Hall <peterjoel@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "A query language for inspecting Rust data structures at runtime"
 
 [workspace]
 members = ["core", "macros", "parse_pest", "query"]
@@ -14,9 +16,11 @@ derive = ["clouseau_macros"]
 arrayvec = ["clouseau_core/arrayvec"]
 
 [dependencies]
-clouseau_core = { path = "core" }
-clouseau_macros = { path = "macros", optional = true }
-clouseau_pest = { path = "parse_pest", optional = true }
-clouseau_query = { path = "query" }
+clouseau_core = { path = "core", version = "0.1.0" }
+clouseau_macros = { path = "macros", optional = true, version = "0.1.0" }
+clouseau_pest = { path = "parse_pest", optional = true, version = "0.1.0" }
+clouseau_query = { path = "query", version = "0.1.0" }
 thiserror = "1"
+
+[dev-dependencies]
 velcro = "0.5"
