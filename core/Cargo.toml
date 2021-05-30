@@ -8,3 +8,4 @@ description = "Internal dependency of clouseau"
 
 [dependencies]
 arrayvec = { version = "0.5", optional = true }
+uuid = { versions = "0.8", optional = true }

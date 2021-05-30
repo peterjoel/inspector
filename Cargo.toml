@@ -14,6 +14,7 @@ default = ["parser_pest", "derive"]
 parser_pest = ["clouseau_pest"]
 derive = ["clouseau_macros"]
 arrayvec = ["clouseau_core/arrayvec"]
+uuid = ["clouseau_core/uuid"]
 
 [dependencies]
 clouseau_core = { path = "core", version = "0.1.0" }
