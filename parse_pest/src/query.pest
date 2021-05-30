@@ -1,18 +1,26 @@
 query = { SOI ~ path ~ EOI }
-path = { ((absolute ~ segment ~ filter?) | relative ~ filter?) ~ ("/" ~ segment ~ filter?)* }
+path = {
+    (absolute ~ segment ~ filter? 
+        | relative ~ segment ~ filter?
+        | current ~ filter?)
+    ~ ("/" ~ segment ~ filter?)* 
+    ~ ("." ~ call)* 
+}
 absolute = @{ "/" }
+current = @{ "." }
 relative = @{ "." }
 segment = { wildcard | ident | integer }
 wildcard = @{ "*" }
-filter = { "[" ~ filter_cond ~ "]" } 
+filter = { "[" ~ filter_cond ~ "]" }
 filter_cond = { path ~ op_compare ~ op_rhs }
 op_rhs = { path | literal | var }
 var = { "$" ~ ident }
+call = { ident ~ "("  ~ ")" }
 op_compare = @{ "?"? ~ ("<=" | ">=" | "=" | ">" | "<") }
 ident = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
-literal = { integer | string | bool }
+literal = { bool | integer | string }
 bool = @{ "true" | "false" }
-integer = @{ "0" | (!("0") ~ ASCII_DIGIT+) }
+integer = @{ "0" | !"0" ~ ASCII_DIGIT+ }
 // TODO handle escape sequences in strings
-string = @{ "\"" ~ (!("\"") ~ ANY)* ~ "\""} 
+string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\""} 
 WHITESPACE = _{" " | "\t" | "\r" | "\n"}

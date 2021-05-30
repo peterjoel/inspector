@@ -169,3 +169,51 @@ fn compare_paths() {
     let result: Vec<Value> = ctx.exec(&q, &d).collect();
     assert_eq!(result, vec_from![15]);
 }
+
+#[test]
+fn function_sum() {
+    #[derive(Queryable)]
+    struct Data {
+        a: Vec<i32>,
+        b: Vec<i32>,
+    }
+    let d = Data {
+        a: vec![10, 11, 12, 13, 14],
+        b: vec![12, 14, 16, 18],
+    };
+
+    let ctx = Context::default().with_standard_fns();
+    // sum all elements of `a`
+    let q = parse_query(r#"/a/*.sum()"#).unwrap();
+    let result: Vec<Value> = ctx.exec(&q, &d).collect();
+    assert_eq!(result, vec_from![60]);
+
+    // sum all elements of `a` that are also present in `b`
+    let q = parse_query(r#"/a/*[. ?= /b/*].sum()"#).unwrap();
+    let result: Vec<Value> = ctx.exec(&q, &d).collect();
+    assert_eq!(result, vec_from![26]);
+}
+
+#[test]
+fn function_count() {
+    #[derive(Queryable)]
+    struct Data {
+        a: Vec<i32>,
+        b: Vec<i32>,
+    }
+    let d = Data {
+        a: vec![10, 11, 12, 13, 14],
+        b: vec![12, 14, 16, 18],
+    };
+
+    let ctx = Context::default().with_standard_fns();
+    // count elements of `a`
+    let q = parse_query(r#"/a/*.count()"#).unwrap();
+    let result: Vec<Value> = ctx.exec(&q, &d).collect();
+    assert_eq!(result, vec_from![5]);
+
+    // count elements of `a` that are larger than some element of `b`
+    let q = parse_query(r#"/a/*[. ?> /b/*].count()"#).unwrap();
+    let result: Vec<Value> = ctx.exec(&q, &d).collect();
+    assert_eq!(result, vec_from![2]);
+}

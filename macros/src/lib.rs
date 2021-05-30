@@ -30,14 +30,14 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
     quote! {
         // TODO support generics
         impl<'a> clouseau::Queryable<'a> for #name {
-            fn keys(&'a self) -> Box<dyn Iterator<Item = clouseau::Value> + 'a> {
-                #keys_body
+            fn keys(&'a self) -> clouseau::ValueIter<'a> {
+                clouseau::ValueIter(#keys_body)
             }
             fn member<'f>(&'a self, field_name: &'f clouseau::Value) -> Option<&'a dyn clouseau::Queryable<'a>> {
                 #member_body
             }
-            fn all(&'a self) -> Box<dyn Iterator<Item = &'a dyn clouseau::Queryable<'a>> + 'a> {
-                #all_body
+            fn all(&'a self) -> clouseau::TreeIter<'a> {
+                clouseau::TreeIter(#all_body)
             }
             fn data(&self) -> Option<clouseau::Value> {
                 #data_body
