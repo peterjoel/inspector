@@ -1,13 +1,23 @@
-use clouseau_core::{Queryable, Value};
+mod std_fns;
+
+use clouseau_core::{Queryable, TreeIter, Value, ValueIter};
 use std::collections::HashMap;
 use std::iter;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 pub struct Context {
     vars: HashMap<String, Value>,
+    fns: HashMap<String, Box<dyn for<'a> Fn(TreeIter<'a>) -> ValueIter<'a>>>,
 }
 
 impl Context {
+    pub fn with_standard_fns(mut self) -> Self {
+        self.fns.insert(String::from("sum"), Box::new(std_fns::sum));
+        self.fns
+            .insert(String::from("count"), Box::new(std_fns::count));
+        self
+    }
+
     pub fn with_var<V: Into<Value>, S: Into<String>>(mut self, name: S, val: V) -> Self {
         self.vars.insert(name.into(), val.into());
         self
@@ -30,7 +40,7 @@ impl Context {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct ContextInner<'a> {
     root: &'a dyn Queryable<'a>,
     ctx: &'a Context,
@@ -58,6 +68,7 @@ pub enum SegmentType {
     Current,
     Child(Value),
     Children,
+    Call(String),
 }
 
 #[derive(Debug)]
@@ -140,28 +151,24 @@ impl Path {
         ctx: ContextInner<'a>,
         q: &'a dyn Queryable<'a>,
     ) -> impl Iterator<Item = Value> + 'a {
-        let init: Box<dyn Iterator<Item = &'a dyn Queryable<'a>>> = Box::new(iter::once(q as _));
+        let init: TreeIter<'a> = TreeIter(Box::new(iter::once(q as _)));
         self.segments
             .iter()
             .fold(init, move |i, segment| {
-                Box::from(i.flat_map(move |qq| segment.exec(ctx, qq)))
+                TreeIter(Box::from(i.flat_map(move |qq| segment.exec(ctx, qq))))
             })
             .flat_map(|qq| Box::from(qq.data().into_iter()))
     }
 }
 
 impl Segment {
-    pub fn exec<'a>(
-        &'a self,
-        ctx: ContextInner<'a>,
-        q: &'a dyn Queryable<'a>,
-    ) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> TreeIter<'a> {
         if let Some(pred) = &self.filter {
-            Box::from(
+            TreeIter(Box::from(
                 self.segment_type
                     .exec(ctx, q)
                     .filter(move |&v| pred.filter(ctx, v)),
-            )
+            ))
         } else {
             self.segment_type.exec(ctx, q)
         }
@@ -223,16 +230,21 @@ impl Pred {
 }
 
 impl SegmentType {
-    pub fn exec<'a>(
-        &'a self,
-        ctx: ContextInner<'a>,
-        q: &'a dyn Queryable<'a>,
-    ) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> TreeIter<'a> {
         match self {
-            SegmentType::Child(s) => Box::from(q.member(&s).into_iter()),
+            SegmentType::Child(s) => TreeIter(Box::from(q.member(&s).into_iter())),
             SegmentType::Children => q.all(),
-            SegmentType::Current => Box::from(iter::once(q)),
-            SegmentType::Root => Box::from(iter::once(ctx.root)),
+            SegmentType::Current => TreeIter(Box::from(iter::once(q))),
+            SegmentType::Root => TreeIter(Box::from(iter::once(ctx.root))),
+            SegmentType::Call(name) => {
+                if let Some(f) = ctx.ctx.fns.get(name.as_str()) {
+                    // f(q)
+                    todo!()
+                } else {
+                    // No error?
+                    TreeIter(Box::from(iter::once(q)))
+                }
+            }
         }
     }
 
