@@ -1,4 +1,9 @@
-use crate::*;
+use crate::{Queryable, TreeIter, Value, ValueConvertError, ValueIter};
+use std::borrow::Cow;
+use std::collections::*;
+use std::convert::{TryFrom, TryInto};
+use std::fmt;
+use std::hash::Hash;
 
 macro_rules! value_int {
     ($($ty: ty $( => $via: ty)?),* $(,)?) => {
@@ -245,6 +250,24 @@ where
 }
 
 impl<'a, T> Queryable<'a> for Vec<T>
+where
+    T: Queryable<'a>,
+{
+    fn keys(&'a self) -> ValueIter<'a> {
+        ValueIter(Box::from((0..self.len()).map(|v| v.into())))
+    }
+
+    fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+        let index = usize::try_from(field).ok()?;
+        self.get(index).map(|v| v as _)
+    }
+
+    fn all(&'a self) -> TreeIter<'a> {
+        TreeIter(Box::new(self.iter().map(|v| v as _)))
+    }
+}
+
+impl<'a, T> Queryable<'a> for VecDeque<T>
 where
     T: Queryable<'a>,
 {

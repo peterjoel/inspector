@@ -4,11 +4,6 @@ mod std_impls;
 #[cfg(feature = "uuid")]
 mod uuid;
 
-use std::borrow::Cow;
-use std::collections::*;
-use std::convert::{TryFrom, TryInto};
-use std::fmt;
-use std::hash::Hash;
 use std::iter;
 
 pub enum ValueOrQueryable<'a> {
