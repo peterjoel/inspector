@@ -9,7 +9,8 @@ filter_cond = { path ~ op_compare ~ op_rhs }
 op_rhs = { path | literal }
 op_compare = @{ "?"? ~ ("<=" | ">=" | "=" | ">" | "<") }
 ident = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
-literal = {integer | string}
+literal = {integer | string | bool }
+bool = @{ "true" | "false" }
 integer = @{ "0" | (!("0") ~ ASCII_DIGIT+) }
 // TODO handle escape sequences in strings
 string = @{ "\"" ~ (!("\"") ~ ANY)* ~ "\""} 

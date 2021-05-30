@@ -97,6 +97,11 @@ fn parse_value(pair: Pair<Rule>) -> Result<Value> {
     match rule {
         Rule::integer => Ok(Value::Int(tokens.parse()?)),
         Rule::string => Ok(Value::String(tokens[1..tokens.len() - 1].to_string())),
+        Rule::bool => match tokens {
+            "true" => Ok(Value::Bool(true)),
+            "false" => Ok(Value::Bool(false)),
+            _ => Err(Error::Pest),
+        },
         _ => Err(Error::Pest),
     }
 }
