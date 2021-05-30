@@ -1,9 +1,12 @@
 query = { SOI ~ path ~ EOI }
-path = { "." ~ filter? ~ ("/" ~ segment ~ filter?)* }
+path = { ((absolute ~ segment ~ filter?) | relative ~ filter?) ~ ("/" ~ segment ~ filter?)* }
+absolute = @{ "/" }
+relative = @{ "." }
 segment = { wildcard | ident | integer }
 wildcard = @{ "*" }
 filter = { "[" ~ filter_cond ~ "]" } 
-filter_cond = { path ~ op_compare ~ literal }
+filter_cond = { path ~ op_compare ~ op_rhs }
+op_rhs = { path | literal }
 op_compare = @{ "?"? ~ ("<=" | ">=" | "=" | ">" | "<") }
 ident = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
 literal = {integer | string}

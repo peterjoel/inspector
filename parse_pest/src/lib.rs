@@ -26,22 +26,20 @@ pub fn parse_query(input: &str) -> Result<Query> {
     let ast = QueryParser::parse(Rule::query, input)?
         .next()
         .ok_or(Error::Pest)?;
-    dbg!("AST");
     Ok(Query::new(parse_path(
         ast.into_inner().next().ok_or(Error::Pest)?,
     )?))
 }
 
 fn parse_path(pair: Pair<Rule>) -> Result<Path> {
-    dbg!(&pair);
     pair.into_inner().fold(Ok(Path::default()), |path, pair| {
-        dbg!(&pair);
         path.and_then(|path| match pair.as_rule() {
+            Rule::absolute => Ok(path.append(SegmentType::Root.to_segment())),
+            Rule::relative => Ok(path.append(SegmentType::Current.to_segment())),
             Rule::segment => {
                 Ok(path.append(parse_segment(pair.into_inner().next().ok_or(Error::Pest)?)?))
             }
             Rule::filter => {
-                dbg!("FILTER");
                 Ok(path.append_filter(parse_filter(pair.into_inner().next().ok_or(Error::Pest)?)?))
             }
             Rule::EOI => Ok(path),
@@ -52,19 +50,28 @@ fn parse_path(pair: Pair<Rule>) -> Result<Path> {
 
 fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     match pair.as_rule() {
-        Rule::wildcard => Ok(SegmentType::All.to_segment()),
-        Rule::ident | Rule::integer => Ok(SegmentType::Named(pair.as_str().into()).to_segment()),
+        Rule::wildcard => Ok(SegmentType::Children.to_segment()),
+        Rule::ident | Rule::integer => Ok(SegmentType::Child(pair.as_str().into()).to_segment()),
         _ => Err(Error::Pest),
     }
 }
 
 fn parse_filter(pair: Pair<Rule>) -> Result<Pred> {
-    dbg!(&pair);
     let mut parts = pair.into_inner();
     let path = parse_path(parts.next().ok_or(Error::Pest)?)?;
     let (match_type, pred) = parse_operator(parts.next().ok_or(Error::Pest)?)?;
-    let value = parse_value(parts.next().ok_or(Error::Pest)?)?;
-    Ok(Pred::new(path, pred, value, match_type))
+    let op_rhs = parts
+        .next()
+        .ok_or(Error::Pest)?
+        .into_inner()
+        .next()
+        .ok_or(Error::Pest)?;
+    let rhs = match op_rhs.as_rule() {
+        Rule::literal => PathOrValue::Value(parse_value(op_rhs)?),
+        Rule::path => PathOrValue::Path(parse_path(op_rhs)?),
+        _ => return Err(Error::Pest),
+    };
+    Ok(Pred::new(path, pred, rhs, match_type))
 }
 
 fn parse_operator(pair: Pair<Rule>) -> Result<(MatchType, Compare)> {

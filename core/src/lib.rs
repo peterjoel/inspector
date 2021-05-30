@@ -30,6 +30,7 @@ pub enum Value {
     Bool(bool),
 }
 
+// TODO add more detail to this error
 pub struct ValueConvertError;
 
 macro_rules! value_int {

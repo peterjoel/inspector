@@ -1,12 +1,17 @@
 use clouseau_core::{Queryable, Value};
 use std::iter;
 
+#[derive(Debug, Clone, Copy)]
+pub struct Context<'a> {
+    root: &'a dyn Queryable<'a>,
+}
+
 #[derive(Default, Debug)]
 pub struct Query {
     path: Path,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Path {
     segments: Vec<Segment>,
 }
@@ -20,8 +25,15 @@ pub struct Segment {
 #[derive(Debug)]
 pub enum SegmentType {
     Root,
-    Named(Value),
-    All,
+    Current,
+    Child(Value),
+    Children,
+}
+
+#[derive(Debug)]
+pub enum PathOrValue {
+    Path(Path),
+    Value(Value),
 }
 
 #[derive(Debug)]
@@ -29,7 +41,7 @@ pub struct Pred {
     match_type: MatchType,
     path: Path,
     compare: Compare,
-    value: Value,
+    rhs: PathOrValue,
 }
 
 #[derive(Debug)]
@@ -53,13 +65,13 @@ impl Query {
     }
 
     pub fn exec<'a>(&'a self, q: &'a dyn Queryable<'a>) -> impl Iterator<Item = Value> + 'a {
-        self.path.exec(q)
+        let ctx = Context { root: q };
+        self.path.exec(ctx, q)
     }
 }
 
 impl Compare {
     fn compare(&self, a: &Value, b: &Value) -> bool {
-        dbg!(&a, &b);
         match (a, b) {
             (Value::String(a), Value::String(b)) => match self {
                 Compare::LessThan => a < b,
@@ -93,59 +105,75 @@ impl Path {
         self
     }
 
-    pub fn exec<'a>(&'a self, q: &'a dyn Queryable<'a>) -> impl Iterator<Item = Value> + 'a {
+    pub fn exec<'a>(
+        &'a self,
+        ctx: Context<'a>,
+        q: &'a dyn Queryable<'a>,
+    ) -> impl Iterator<Item = Value> + 'a {
         let init: Box<dyn Iterator<Item = &'a dyn Queryable<'a>>> = Box::new(iter::once(q as _));
         self.segments
             .iter()
             .fold(init, move |i, segment| {
-                Box::from(i.flat_map(move |qq| segment.exec(qq)))
+                Box::from(i.flat_map(move |qq| segment.exec(ctx, qq)))
             })
             .flat_map(|qq| Box::from(qq.data().into_iter()))
-    }
-}
-
-impl Default for Path {
-    fn default() -> Self {
-        Path {
-            segments: vec![Segment {
-                segment_type: SegmentType::Root,
-                filter: None,
-            }],
-        }
     }
 }
 
 impl Segment {
     pub fn exec<'a>(
         &'a self,
+        ctx: Context<'a>,
         q: &'a dyn Queryable<'a>,
     ) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
         if let Some(pred) = &self.filter {
-            Box::from(self.segment_type.exec(q).filter(move |&v| pred.filter(v)))
+            Box::from(
+                self.segment_type
+                    .exec(ctx, q)
+                    .filter(move |&v| pred.filter(ctx, v)),
+            )
         } else {
-            self.segment_type.exec(q)
+            self.segment_type.exec(ctx, q)
         }
     }
 }
 
 impl Pred {
-    pub fn new(path: Path, compare: Compare, value: Value, match_type: MatchType) -> Pred {
+    pub fn new(path: Path, compare: Compare, rhs: PathOrValue, match_type: MatchType) -> Pred {
         Self {
             path,
             compare,
-            value,
+            rhs,
             match_type,
         }
     }
-    pub fn filter<'a>(&'a self, q: &'a dyn Queryable<'a>) -> bool {
-        let mut values = self.path.exec(q).peekable();
+    pub fn filter<'a>(&'a self, ctx: Context<'a>, q: &'a dyn Queryable<'a>) -> bool {
+        let mut values = self.path.exec(ctx, q).peekable();
         match self.match_type {
-            MatchType::Any => {
-                values.peek().is_some() && values.any(|v| self.compare.compare(&v, &self.value))
-            }
-            MatchType::All => {
-                values.peek().is_some() && values.all(|v| self.compare.compare(&v, &self.value))
-            }
+            MatchType::Any => match &self.rhs {
+                PathOrValue::Path(path) => {
+                    values.peek().is_some()
+                        && values.any(|v| {
+                            let mut rhs = path.exec(ctx, q).peekable();
+                            rhs.peek().is_some() && rhs.any(|r| self.compare.compare(&v, &r))
+                        })
+                }
+                PathOrValue::Value(value) => {
+                    values.peek().is_some() && values.any(|v| self.compare.compare(&v, value))
+                }
+            },
+            MatchType::All => match &self.rhs {
+                PathOrValue::Path(path) => {
+                    values.peek().is_some()
+                        && values.any(|v| {
+                            let mut rhs = path.exec(ctx, q).peekable();
+                            rhs.peek().is_some() && rhs.all(|r| self.compare.compare(&v, &r))
+                        })
+                }
+                PathOrValue::Value(value) => {
+                    values.peek().is_some() && values.all(|v| self.compare.compare(&v, value))
+                }
+            },
         }
     }
 }
@@ -153,12 +181,14 @@ impl Pred {
 impl SegmentType {
     pub fn exec<'a>(
         &'a self,
+        ctx: Context<'a>,
         q: &'a dyn Queryable<'a>,
     ) -> Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a> {
         match self {
-            SegmentType::Named(s) => Box::from(q.member(&s).into_iter()),
-            SegmentType::All => q.all(),
-            SegmentType::Root => Box::from(iter::once(q)),
+            SegmentType::Child(s) => Box::from(q.member(&s).into_iter()),
+            SegmentType::Children => q.all(),
+            SegmentType::Current => Box::from(iter::once(q)),
+            SegmentType::Root => Box::from(iter::once(ctx.root)),
         }
     }
 
