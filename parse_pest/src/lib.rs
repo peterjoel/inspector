@@ -4,6 +4,7 @@ use pest::error::Error as PestError;
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
+use std::rc::Rc;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -67,6 +68,7 @@ fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     match pair.as_rule() {
         Rule::wildcard => Ok(SegmentType::Children.into_segment()),
         Rule::ident | Rule::integer => Ok(SegmentType::Child(pair.as_str().into()).into_segment()),
+        Rule::literal => Ok(SegmentType::Child(parse_value(pair)?).into_segment()),
         _ => Err(Error::Pest),
     }
 }
@@ -118,8 +120,8 @@ fn parse_operator(pair: Pair<Rule>) -> Result<(MatchType, Compare)> {
 
 fn parse_value(pair: Pair<Rule>) -> Result<Value> {
     let tokens = pair.as_str();
-    let rule = pair.into_inner().next().ok_or(Error::Pest)?.as_rule();
-    match rule {
+    let value = pair.into_inner().next().ok_or(Error::Pest)?;
+    match value.as_rule() {
         Rule::integer => Ok(Value::Int(tokens.parse()?)),
         Rule::string => Ok(Value::String(tokens[1..tokens.len() - 1].to_string())),
         Rule::bool => match tokens {
@@ -127,6 +129,15 @@ fn parse_value(pair: Pair<Rule>) -> Result<Value> {
             "false" => Ok(Value::Bool(false)),
             _ => Err(Error::Pest),
         },
+        Rule::array => Ok(Value::Array(parse_array(value)?)),
         _ => Err(Error::Pest),
     }
+}
+
+fn parse_array(pair: Pair<Rule>) -> Result<Array> {
+    let mut values = vec![];
+    for pair in pair.into_inner() {
+        values.push(parse_value(pair)?);
+    }
+    Ok(Array(Rc::from(values.into_boxed_slice())))
 }

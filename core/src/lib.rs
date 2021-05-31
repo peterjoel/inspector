@@ -4,7 +4,9 @@ mod std_impls;
 #[cfg(feature = "uuid")]
 mod uuid;
 
+use std::fmt;
 use std::iter;
+use std::rc::Rc;
 
 pub enum ValueOrQueryable<'a> {
     Value(Value),
@@ -31,6 +33,49 @@ pub enum Value {
     String(String),
     Int(i64),
     Bool(bool),
+    Array(Array),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub struct Array(pub Rc<[Value]>);
+
+impl Array {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl IntoIterator for Array {
+    type Item = Value;
+    type IntoIter = ArrayIter;
+    fn into_iter(self) -> ArrayIter {
+        ArrayIter {
+            current: 0,
+            array: self,
+        }
+    }
+}
+
+pub struct ArrayIter {
+    current: usize,
+    array: Array,
+}
+
+impl Iterator for ArrayIter {
+    type Item = Value;
+    fn next(&mut self) -> Option<Value> {
+        if self.current == self.array.len() {
+            None
+        } else {
+            let index = self.current;
+            self.current += 1;
+            Some(self.array.0[index].clone())
+        }
+    }
 }
 
 impl Value {
@@ -43,6 +88,17 @@ impl Value {
     }
     pub fn into_value_or_queryable(self) -> ValueOrQueryable<'static> {
         ValueOrQueryable::Value(self)
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::String(v) => write!(f, "{}", v),
+            Value::Int(v) => write!(f, "{}", v),
+            Value::Bool(v) => write!(f, "{}", v),
+            Value::Array(v) => write!(f, "{:?}", v),
+        }
     }
 }
 

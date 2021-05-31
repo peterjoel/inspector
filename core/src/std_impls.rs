@@ -2,7 +2,6 @@ use crate::{Queryable, TreeIter, Value, ValueConvertError};
 use std::borrow::Cow;
 use std::collections::*;
 use std::convert::{TryFrom, TryInto};
-use std::fmt;
 use std::hash::Hash;
 
 macro_rules! value_int {
@@ -44,6 +43,7 @@ macro_rules! value_int {
                         } else {
                             0.try_into().map_err(|_| ValueConvertError)
                         }
+                        Value::Array(_) => Err(ValueConvertError),
                     }
                 }
             }
@@ -114,12 +114,20 @@ impl From<&String> for Value {
     }
 }
 
-impl From<Value> for String {
-    fn from(v: Value) -> String {
+impl TryFrom<Value> for String {
+    type Error = ValueConvertError;
+    fn try_from(v: Value) -> Result<String, ValueConvertError> {
         match v {
-            Value::Int(i) => i.to_string(),
-            Value::String(s) => s,
-            Value::Bool(b) => b.to_string(),
+            Value::Int(i) => Ok(i.to_string()),
+            Value::String(s) => Ok(s),
+            Value::Bool(b) => Ok(b.to_string()),
+            Value::Array(arr) => {
+                if arr.0.len() == 1 {
+                    Ok(arr.0[0].to_string())
+                } else {
+                    Err(ValueConvertError)
+                }
+            }
         }
     }
 }
@@ -132,16 +140,6 @@ where
 {
     fn from(v: Cow<'b, T>) -> Value {
         Value::from(v.into_owned())
-    }
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Value::String(v) => write!(f, "{}", v),
-            Value::Int(v) => write!(f, "{}", v),
-            Value::Bool(v) => write!(f, "{}", v),
-        }
     }
 }
 
@@ -186,7 +184,6 @@ where
     // TODO get rid of the Clone constraint
     K: Queryable<'a> + Hash + Eq + Clone,
     V: Queryable<'a>,
-    Value: From<K>,
     K: TryFrom<Value>,
 {
     fn member<'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'a>> {
@@ -203,7 +200,6 @@ impl<'a, K, V> Queryable<'a> for BTreeMap<K, V>
 where
     K: Queryable<'a> + Ord + Eq + 'a,
     V: Queryable<'a>,
-    Value: From<&'a K>,
     K: TryFrom<Value>,
 {
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
@@ -347,10 +343,10 @@ where
 macro_rules! impl_tuples {
     ( => ) => {};
     ($t: ident $(,$other_t: ident)* => $ind: tt $(,$other_ind: tt)*) => {
-        impl_tuples!(@ $t $(, $other_t)* => $ind $(, $other_ind)*);
+        impl_tuples!(@ $t $(, $other_t)* ($ind) => $ind $(, $other_ind)*);
         impl_tuples!($($other_t),* => $($other_ind),*);
     };
-    (@ $($t: ident),+ => $($ind: tt),+) => {
+    (@ $($t: ident),+ ($len: tt) => $($ind: tt),+) => {
         impl<'a $(,$t)+> Queryable<'a> for ($($t,)+)
         where
             $($t: Queryable<'a>),+
@@ -378,7 +374,29 @@ macro_rules! impl_tuples {
                 None
             }
         }
-    }
+
+        impl<$($t),+> TryFrom<Value> for ($($t,)+)
+        where
+            $($t: TryFrom<Value>),+
+        {
+            type Error = ValueConvertError;
+            fn try_from(value: Value) -> Result<Self, ValueConvertError> {
+                match value {
+                    #[allow(unused_comparisons)]
+                    Value::Array(arr) if arr.len() >= $len => {
+                        let mut iter = arr.into_iter();
+                        Ok((
+                            $(
+                                $t::try_from(iter.next().ok_or(ValueConvertError)?)
+                                    .map_err(|_| ValueConvertError)?,
+                            )+
+                        ))
+                    }
+                    _ => Err(ValueConvertError),
+                }
+            }
+        }
+    };
 }
 
 impl_tuples!(A, B, C, D, E, F, G, H, I, J, K, L => 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
@@ -417,7 +435,35 @@ macro_rules! impl_arrays {
                 None
             }
         }
-    }
+
+        impl<T> TryFrom<Value> for [T; $size]
+        where
+            T: TryFrom<Value>,
+        {
+            type Error = ValueConvertError;
+            fn try_from(value: Value) -> Result<Self, ValueConvertError> {
+                match value {
+                    #[allow(unused_comparisons)]
+                    Value::Array(arr) if arr.len() >= $size => {
+                        #[allow(unused_variables, unused_mut)]
+                        let mut iter = arr.into_iter();
+                        Ok([
+                            $(
+                                impl_arrays!(@foreach ($ind) =>
+                                    T::try_from(iter.next().ok_or(ValueConvertError)?)
+                                        .map_err(|_| ValueConvertError)?
+                                )
+                            ),*
+                        ])
+                    }
+                    _ => Err(ValueConvertError),
+                }
+            }
+        }
+    };
+    (@foreach ($($counter: tt)*) => $($output: tt)*) => {
+        $($output)*
+    };
 }
 
 impl_arrays!(
