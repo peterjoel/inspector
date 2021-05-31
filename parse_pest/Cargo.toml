@@ -1,6 +1,6 @@
 [package]
 name = "clouseau_pest"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Peter Hall <peterjoel@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -10,8 +10,8 @@ description = "Internal dependency of clouseau"
 pest = "2.1"    
 pest_derive = "2.1"
 thiserror = "1"
-clouseau_core = { path = "../core", version = "0.2.1" }
-clouseau_query = { path = "../query", version = "0.2.1" }
+clouseau_core = { path = "../core", version = "0.2.2" }
+clouseau_query = { path = "../query", version = "0.2.2" }
 
 [dev-dependencies]
 velcro = "0.5"
