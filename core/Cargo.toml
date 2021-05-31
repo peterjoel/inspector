@@ -1,6 +1,6 @@
 [package]
 name = "clouseau_core"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Peter Hall <peterjoel@gmail.com>"]
 edition = "2018"
 license = "MIT"
