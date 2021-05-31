@@ -10,9 +10,10 @@ description = "A query language for inspecting Rust data structures at runtime"
 members = ["core", "macros", "parse_pest", "query"]
 
 [features]
-default = ["parser_pest", "derive"]
+default = ["parser_pest", "derive", "query"]
 parser_pest = ["clouseau_pest"]
 derive = ["clouseau_macros"]
+query = ["clouseau_query"]
 arrayvec = ["clouseau_core/arrayvec"]
 uuid = ["clouseau_core/uuid"]
 
@@ -20,7 +21,7 @@ uuid = ["clouseau_core/uuid"]
 clouseau_core = { path = "core", version = "0.2.2" }
 clouseau_macros = { path = "macros", optional = true, version = "0.2.2" }
 clouseau_pest = { path = "parse_pest", optional = true, version = "0.2.2" }
-clouseau_query = { path = "query", version = "0.2.2" }
+clouseau_query = { path = "query", optional = true, version = "0.2.2" }
 thiserror = "1"
 
 [dev-dependencies]
