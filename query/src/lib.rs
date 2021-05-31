@@ -4,7 +4,7 @@ use clouseau_core::{Queryable, TreeIter, Value, ValueIter};
 use std::collections::HashMap;
 use std::iter;
 
-type ValueFn = dyn for<'a> Fn(ValueIter<'a>) -> ValueIter<'a>;
+type ValueFn = dyn Fn(ValueIter) -> ValueIter;
 
 #[derive(Default)]
 pub struct Context {
@@ -19,6 +19,12 @@ impl Context {
             .insert(String::from("count"), Box::new(std_fns::count));
         self.fns.insert(String::from("min"), Box::new(std_fns::min));
         self.fns.insert(String::from("max"), Box::new(std_fns::max));
+        self.fns
+            .insert(String::from("distinct"), Box::new(std_fns::distinct));
+        self.fns
+            .insert(String::from("first"), Box::new(std_fns::first));
+        self.fns
+            .insert(String::from("last"), Box::new(std_fns::last));
         self
     }
 

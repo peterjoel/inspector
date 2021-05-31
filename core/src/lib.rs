@@ -28,7 +28,7 @@ pub trait Queryable<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum Value {
     String(String),
     Int(i64),
@@ -36,7 +36,7 @@ pub enum Value {
     Array(Array),
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct Array(pub Rc<[Value]>);
 
 impl Array {
