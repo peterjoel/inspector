@@ -17,7 +17,7 @@ op_rhs = { path | literal | var }
 var = { "$" ~ ident }
 call = { ident ~ "("  ~ ")" }
 op_compare = @{ "?"? ~ ("<=" | ">=" | "=" | ">" | "<") }
-ident = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
+ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 literal = { array | bool | integer | string }
 array = { "{" ~ (literal ~ ("," ~ literal)* ~ ","?)? ~ "}" }
 bool = @{ "true" | "false" }
