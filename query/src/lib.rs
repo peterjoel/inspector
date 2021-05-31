@@ -27,10 +27,6 @@ impl Context {
         self
     }
 
-    fn var(&self, name: &str) -> Option<&Value> {
-        self.vars.get(name)
-    }
-
     pub fn exec<'a>(
         &'a self,
         q: &'a Query,
@@ -41,6 +37,16 @@ impl Context {
             root: data,
         };
         q.exec(ctx)
+    }
+}
+
+impl<'a> ContextInner<'a> {
+    fn var(&self, name: &str) -> Option<&Value> {
+        self.ctx.vars.get(name)
+    }
+
+    fn fun(&self, name: &str) -> Option<&ValueFn> {
+        self.ctx.fns.get(name).map(|f| &**f)
     }
 }
 
@@ -160,14 +166,14 @@ impl Path {
 
     pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> ValueIter<'a> {
         let init = TreeIter(Box::new(iter::once(q as _)));
-        let path_result = ValueIter(Box::from(
+        let path_result = ValueIter::from_values(
             self.segments
                 .iter()
                 .fold(init, move |i, segment| {
                     TreeIter(Box::from(i.flat_map(move |qq| segment.exec(ctx, qq))))
                 })
                 .flat_map(|qq| Box::from(qq.data().into_iter())),
-        ));
+        );
         self.functions
             .iter()
             .fold(path_result, |acc, f| f.exec(ctx, acc))
@@ -190,7 +196,7 @@ impl Segment {
 
 impl Call {
     pub fn exec<'a>(&self, ctx: ContextInner<'a>, values: ValueIter<'a>) -> ValueIter<'a> {
-        if let Some(f) = ctx.ctx.fns.get(&self.0) {
+        if let Some(f) = ctx.fun(&self.0) {
             f(values)
         } else {
             values
@@ -222,7 +228,7 @@ impl Pred {
                     values.peek().is_some() && values.any(|v| self.compare.compare(&v, value))
                 }
                 OperatorRhs::Var(ident) => {
-                    if let Some(value) = ctx.ctx.var(&ident) {
+                    if let Some(value) = ctx.var(&ident) {
                         values.peek().is_some() && values.any(|v| self.compare.compare(&v, value))
                     } else {
                         false
@@ -241,7 +247,7 @@ impl Pred {
                     values.peek().is_some() && values.all(|v| self.compare.compare(&v, value))
                 }
                 OperatorRhs::Var(ident) => {
-                    if let Some(value) = ctx.ctx.var(&ident) {
+                    if let Some(value) = ctx.var(&ident) {
                         values.peek().is_some() && values.all(|v| self.compare.compare(&v, value))
                     } else {
                         false

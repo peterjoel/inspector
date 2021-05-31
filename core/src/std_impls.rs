@@ -195,7 +195,7 @@ where
     }
 
     fn all(&'a self) -> TreeIter<'a> {
-        TreeIter(Box::new(self.values().map(|v| v as _)))
+        TreeIter::from_queryables(self.values())
     }
 }
 
@@ -212,7 +212,7 @@ where
     }
 
     fn all(&'a self) -> TreeIter<'a> {
-        TreeIter(Box::new(self.values().map(|v| v as _)))
+        TreeIter::from_queryables(self.values())
     }
 }
 
@@ -221,7 +221,7 @@ where
     V: Queryable<'a> + Ord + Eq,
 {
     fn all(&'a self) -> TreeIter<'a> {
-        TreeIter(Box::new(self.iter().map(|v| v as _)))
+        TreeIter::from_queryables(self)
     }
 }
 
@@ -230,7 +230,7 @@ where
     V: Queryable<'a> + Hash + Eq,
 {
     fn all(&'a self) -> TreeIter<'a> {
-        TreeIter(Box::new(self.iter().map(|v| v as _)))
+        TreeIter::from_queryables(self)
     }
 }
 
@@ -244,7 +244,7 @@ where
     }
 
     fn all(&'a self) -> TreeIter<'a> {
-        TreeIter(Box::new(self.iter().map(|v| v as _)))
+        TreeIter::from_queryables(self)
     }
 }
 
@@ -258,7 +258,7 @@ where
     }
 
     fn all(&'a self) -> TreeIter<'a> {
-        TreeIter(Box::new(self.iter().map(|v| v as _)))
+        TreeIter::from_queryables(self.iter())
     }
 }
 
@@ -291,7 +291,7 @@ where
         if let Some(val) = self.as_ref() {
             val.all()
         } else {
-            TreeIter(Box::from(std::iter::empty()))
+            TreeIter::empty()
         }
     }
 
@@ -312,7 +312,7 @@ where
         if let Ok(val) = self.as_ref() {
             val.all()
         } else {
-            TreeIter(Box::from(std::iter::empty()))
+            TreeIter::empty()
         }
     }
 

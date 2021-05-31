@@ -54,11 +54,25 @@ impl<'a> ValueIter<'a> {
     pub fn once<V: Into<Value>>(val: V) -> Self {
         ValueIter(Box::new(iter::once(val.into())))
     }
+
+    pub fn from_values<T: 'a>(values: impl IntoIterator<Item = T> + 'a) -> Self
+    where
+        Value: From<T>,
+    {
+        ValueIter(Box::from(values.into_iter().map(Value::from)))
+    }
 }
 
 impl<'a> TreeIter<'a> {
     pub fn empty() -> Self {
         TreeIter(Box::new(iter::empty()))
+    }
+
+    pub fn from_queryables<Q>(queryables: impl IntoIterator<Item = &'a Q> + 'a) -> Self
+    where
+        Q: Queryable<'a> + 'a,
+    {
+        TreeIter(Box::from(queryables.into_iter().map(|q| q as _)))
     }
 }
 

@@ -9,21 +9,9 @@ pub fn sum(input: ValueIter<'_>) -> ValueIter<'_> {
 }
 
 pub fn max(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter(Box::from(
-        input
-            .filter_map(Value::into_int)
-            .max()
-            .into_iter()
-            .map(Value::from),
-    ))
+    ValueIter::from_values(input.filter_map(Value::into_int).max())
 }
 
 pub fn min(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter(Box::from(
-        input
-            .filter_map(Value::into_int)
-            .min()
-            .into_iter()
-            .map(Value::from),
-    ))
+    ValueIter::from_values(input.filter_map(Value::into_int).min())
 }

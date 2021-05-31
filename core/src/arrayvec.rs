@@ -20,7 +20,7 @@ where
         }
     }
     fn all(&'a self) -> TreeIter<'a> {
-        TreeIter(Box::from(self.iter().map(|v| v as _)))
+        TreeIter::from_queryables(self)
     }
     fn data(&self) -> Option<Value> {
         None
