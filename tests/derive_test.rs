@@ -1,12 +1,13 @@
 use clouseau::parse_query;
 use clouseau::{query::Context, Queryable};
+use std::marker::PhantomData;
 use velcro::vec_from;
 
 #[derive(Debug, Queryable)]
 struct Foo {
     a: i64,
     b: &'static str,
-    v: Vec<Bar>,
+    v: Vec<HasGenerics<Bar, bool>>,
 }
 
 #[derive(Debug, Queryable)]
@@ -22,13 +23,26 @@ enum AnEnum {
     Named { a: u32, b: Vec<i64> },
 }
 
+#[derive(Debug, Queryable)]
+struct HasGenerics<X: for<'a> Queryable<'a>, Unused> {
+    x: X,
+    _marker: PhantomData<Unused>,
+}
+
+fn has_generics<X: for<'a> Queryable<'a>>(x: X) -> HasGenerics<X, bool> {
+    HasGenerics {
+        x,
+        _marker: PhantomData,
+    }
+}
+
 #[test]
 fn query_custom_struct() {
     let f = NewType(Foo {
         a: 1,
         b: "hello",
         v: vec![
-            Bar(
+            has_generics(Bar(
                 false,
                 AnEnum::Zero,
                 Foo {
@@ -36,14 +50,14 @@ fn query_custom_struct() {
                     b: "bye",
                     v: vec![],
                 },
-            ),
-            Bar(
+            )),
+            has_generics(Bar(
                 false,
                 AnEnum::One(20),
                 Foo {
                     a: 11,
                     b: "bonjour",
-                    v: vec![Bar(
+                    v: vec![has_generics(Bar(
                         false,
                         AnEnum::One(1),
                         Foo {
@@ -51,10 +65,10 @@ fn query_custom_struct() {
                             b: "aaaaa",
                             v: vec![],
                         },
-                    )],
+                    ))],
                 },
-            ),
-            Bar(
+            )),
+            has_generics(Bar(
                 false,
                 AnEnum::Named {
                     a: 1,
@@ -65,12 +79,12 @@ fn query_custom_struct() {
                     b: "ciao",
                     v: vec![],
                 },
-            ),
+            )),
         ],
     });
 
     let ctx = Context::default();
-    let q = parse_query("./v/*[./1/a = 1]/2/b").unwrap();
+    let q = parse_query("./v/*/x[./1/a = 1]/2/b").unwrap();
     let res: Vec<_> = ctx.exec(&q, &f).collect();
     assert_eq!(res, vec_from!["ciao"]);
 }
