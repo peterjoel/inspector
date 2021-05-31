@@ -1,6 +1,6 @@
 [package]
 name = "clouseau"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Peter Hall <peterjoel@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -18,10 +18,10 @@ arrayvec = ["clouseau_core/arrayvec"]
 uuid = ["clouseau_core/uuid"]
 
 [dependencies]
-clouseau_core = { path = "core", version = "0.2.2" }
-clouseau_macros = { path = "macros", optional = true, version = "0.2.2" }
-clouseau_pest = { path = "parse_pest", optional = true, version = "0.2.2" }
-clouseau_query = { path = "query", optional = true, version = "0.2.2" }
+clouseau_core = { path = "core", version = "0.2.3" }
+clouseau_macros = { path = "macros", optional = true, version = "0.2.3" }
+clouseau_pest = { path = "parse_pest", optional = true, version = "0.2.3" }
+clouseau_query = { path = "query", optional = true, version = "0.2.3" }
 thiserror = "1"
 
 [dev-dependencies]
