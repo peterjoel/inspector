@@ -1,8 +1,6 @@
 use clouseau::query::Context;
 use clouseau::*;
 use std::collections::*;
-use std::fmt::Debug;
-use velcro::vec;
 use velcro::*;
 
 #[test]
