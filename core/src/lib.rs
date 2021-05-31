@@ -1,9 +1,11 @@
 #[cfg(feature = "arrayvec")]
 mod arrayvec;
+mod float;
 mod std_impls;
 #[cfg(feature = "uuid")]
 mod uuid;
 
+use float::WellBehavedF64;
 use std::fmt;
 use std::iter;
 use std::rc::Rc;
@@ -32,6 +34,7 @@ pub trait Queryable<'a> {
 pub enum Value {
     String(String),
     Int(i64),
+    Float(WellBehavedF64),
     Bool(bool),
     Array(Array),
 }
@@ -98,6 +101,7 @@ impl fmt::Display for Value {
             Value::Int(v) => write!(f, "{}", v),
             Value::Bool(v) => write!(f, "{}", v),
             Value::Array(v) => write!(f, "{:?}", v),
+            Value::Float(v) => write!(f, "{}", v),
         }
     }
 }

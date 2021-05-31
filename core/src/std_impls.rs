@@ -45,6 +45,11 @@ macro_rules! value_int {
                             0.try_into().map_err(|_| ValueConvertError)
                         }
                         Value::Array(_) => Err(ValueConvertError),
+                        &Value::Float(f) => if *f >= i64::min_value() as f64 && *f <= i64::max_value() as f64 {
+                            <$ty>::try_from(Value::Int(*f as i64))
+                        } else {
+                            Err(ValueConvertError)
+                        }
                     }
                 }
             }
@@ -84,6 +89,64 @@ value_int!(
     std::num::NonZeroUsize => usize,
     std::num::NonZeroIsize => isize,
 );
+
+macro_rules! value_float {
+    ($($ty: tt),* $(,)?) => {
+        $(
+            impl From<$ty> for Value {
+                fn from(v: $ty) -> Value {
+                    Value::Float(v.try_into().unwrap_or_else(|e| {
+                        panic!("{} {} could not be converted to i64: {}", stringify!($ty), v, e);
+                    }))
+                }
+            }
+
+            impl From<&$ty> for Value {
+                fn from(v: &$ty) -> Value {
+                    Value::from(*v)
+                }
+            }
+
+            impl TryFrom<Value> for $ty {
+                type Error = ValueConvertError;
+                fn try_from(value: Value) -> Result<Self, Self::Error> {
+                    Self::try_from(&value)
+                }
+            }
+
+            impl TryFrom<&Value> for $ty {
+                type Error = ValueConvertError;
+                fn try_from(value: &Value) -> Result<Self, Self::Error> {
+                    match value {
+                        &Value::Int(v) => {
+                            Ok((v as $ty).into())
+                        },
+                        Value::String(s) => s.parse().map_err(|_| ValueConvertError),
+                        &Value::Bool(b) => if b {
+                            Ok(1.0)
+                        } else {
+                            Ok(0.0)
+                        }
+                        Value::Array(_) => Err(ValueConvertError),
+                        &Value::Float(f) => if *f >= $ty::MIN as f64 && *f <= $ty::MAX as f64 {
+                            Ok(*f as $ty)
+                        } else {
+                            Err(ValueConvertError)
+                        }
+                    }
+                }
+            }
+
+            impl<'a> Queryable<'a> for $ty {
+                fn data<'f>(&self) -> Option<Value> {
+                    Some((*self).into())
+                }
+            }
+        )*
+    }
+}
+
+value_float!(f32, f64);
 
 impl From<bool> for Value {
     fn from(b: bool) -> Value {
@@ -129,6 +192,7 @@ impl TryFrom<Value> for String {
                     Err(ValueConvertError)
                 }
             }
+            Value::Float(f) => Ok(f.to_string()),
         }
     }
 }
