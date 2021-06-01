@@ -24,12 +24,12 @@ enum AnEnum {
 }
 
 #[derive(Debug, Queryable)]
-struct HasGenerics<X: for<'a> Queryable<'a>, Unused> {
+struct HasGenerics<X, Unused> {
     x: X,
     _marker: PhantomData<Unused>,
 }
 
-fn has_generics<X: for<'a> Queryable<'a>>(x: X) -> HasGenerics<X, bool> {
+fn has_generics<X>(x: X) -> HasGenerics<X, bool> {
     HasGenerics {
         x,
         _marker: PhantomData,

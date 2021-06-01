@@ -2,8 +2,8 @@ use proc_macro2::{Literal, Span, TokenStream};
 use quote::{quote, ToTokens};
 use std::iter::Extend;
 use syn::{
-    parse_macro_input, spanned::Spanned, Data, DataEnum, DataStruct, DeriveInput, Fields, Generics,
-    Ident, Lifetime, TypeGenerics, WhereClause,
+    parse_macro_input, parse_quote, spanned::Spanned, Data, DataEnum, DataStruct, DeriveInput,
+    Fields, Generics, Ident, Lifetime, TypeGenerics, WhereClause, WherePredicate,
 };
 
 #[proc_macro_derive(Queryable)]
@@ -13,9 +13,9 @@ pub fn derive_queryable(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
 fn impl_queryable(input: DeriveInput) -> TokenStream {
     let name = &input.ident;
-    let q_life = Lifetime::new("'__clouseau_a", Span::call_site());
+    let q_life = &Lifetime::new("'__clouseau_a", Span::call_site());
     let (impl_generics, type_generics, where_clause) =
-        create_generics(vec![q_life.clone()], &input.generics);
+        create_generics(q_life.clone(), &input.generics);
     let (member_body, all_body, data_body) = match &input.data {
         Data::Struct(data) => (
             struct_member_body(data),
@@ -44,28 +44,49 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
     }
 }
 
-struct ImplGenerics<'a>(&'a Generics, Vec<Lifetime>);
+struct ImplGenerics<'a>(&'a Generics, Lifetime);
 
 impl<'a> ToTokens for ImplGenerics<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let lifetimes = &self.1;
+        let lifetime = &self.1;
         let original_generics = self.0.params.iter();
         tokens.extend(quote! {
-            <#(#lifetimes,)* #(#original_generics),*>
+            <#lifetime, #(#original_generics),*>
         });
     }
 }
 
 fn create_generics(
-    extra_lifetimes: Vec<Lifetime>,
+    clouseau_lifetime: Lifetime,
     generics: &Generics,
-) -> (ImplGenerics<'_>, TypeGenerics<'_>, Option<&WhereClause>) {
-    let (_, type_generics, where_clause) = generics.split_for_impl();
+) -> (ImplGenerics<'_>, TypeGenerics<'_>, WhereClause) {
+    let lifetime = &clouseau_lifetime;
+    let where_clause = where_clause_with_bound(
+        generics,
+        quote! {
+            clouseau::Queryable<#lifetime>
+        },
+    );
+    let (_, type_generics, _) = generics.split_for_impl();
     (
-        ImplGenerics(generics, extra_lifetimes),
+        ImplGenerics(generics, clouseau_lifetime),
         type_generics,
         where_clause,
     )
+}
+
+fn where_clause_with_bound(generics: &Generics, bound: TokenStream) -> WhereClause {
+    let new_predicates = generics.type_params().map::<WherePredicate, _>(|param| {
+        let param = &param.ident;
+        parse_quote!(#param : #bound)
+    });
+
+    let mut generics = generics.clone();
+    generics
+        .make_where_clause()
+        .predicates
+        .extend(new_predicates);
+    generics.where_clause.unwrap()
 }
 
 fn struct_member_body(data: &DataStruct) -> TokenStream {
