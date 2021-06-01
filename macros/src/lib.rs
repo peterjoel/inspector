@@ -30,17 +30,17 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
         Data::Union(_) => return quote! { compile_error!("Unions are not supported"); },
     };
     quote! {
-        impl#impl_generics ::clouseau::Queryable<#q_life> for #name#type_generics #where_clause {
+        impl#impl_generics ::clouseau::core::Queryable<#q_life> for #name#type_generics #where_clause {
             fn name(&self) -> &'static str {
                 stringify!(#name)
             }
-            fn member<'f>(&#q_life self, field_name: &'f ::clouseau::Value) -> Option<&#q_life dyn ::clouseau::Queryable<#q_life>> {
+            fn member<'f>(&#q_life self, field_name: &'f ::clouseau::core::Value) -> Option<&#q_life dyn ::clouseau::core::Queryable<#q_life>> {
                 #member_body
             }
-            fn all(&#q_life self) -> ::clouseau::TreeIter<#q_life> {
-                ::clouseau::TreeIter(#all_body)
+            fn all(&#q_life self) -> ::clouseau::core::TreeIter<#q_life> {
+                ::clouseau::core::TreeIter(#all_body)
             }
-            fn data(&self) -> Option<::clouseau::Value> {
+            fn data(&self) -> Option<::clouseau::core::Value> {
                 #data_body
             }
         }
@@ -67,7 +67,7 @@ fn create_generics(
     let where_clause = where_clause_with_bound(
         generics,
         quote! {
-            ::clouseau::Queryable<#lifetime>
+            ::clouseau::core::Queryable<#lifetime>
         },
     );
     let (_, type_generics, _) = generics.split_for_impl();
@@ -105,9 +105,9 @@ fn struct_member_body(data: &DataStruct) -> TokenStream {
                 quote! {
                     match field_name {
                         #(
-                            ::clouseau::Value::Int(#indices) => { Some(&self.#indices as _) },
+                            ::clouseau::core::Value::Int(#indices) => { Some(&self.#indices as _) },
                         )*
-                        ::clouseau::Value::String(s) => match s.parse::<usize>() {
+                        ::clouseau::core::Value::String(s) => match s.parse::<usize>() {
                             #(Ok(#indices2) => Some(&self.#indices2 as _),)*
                             _ => None,
                         }
@@ -120,7 +120,7 @@ fn struct_member_body(data: &DataStruct) -> TokenStream {
             let names = fields.named.iter().filter_map(|named| named.ident.as_ref());
             quote! {
                 match field_name {
-                    ::clouseau::Value::String(s) => {
+                    ::clouseau::core::Value::String(s) => {
                         match s.as_str() {
                             #(stringify!(#names) => Some(&self.#names as _),)*
                             _ => None,
@@ -178,9 +178,9 @@ fn enum_member_body(data: &DataEnum) -> TokenStream {
                     Self::#name(#(#bindings),*) => {
                         match field_name {
                             #(
-                                ::clouseau::Value::Int(#indices) => { Some(#bindings2 as _) },
+                                ::clouseau::core::Value::Int(#indices) => { Some(#bindings2 as _) },
                             )*
-                            ::clouseau::Value::String(s) => if let Ok(i) = s.parse::<i64>() {
+                            ::clouseau::core::Value::String(s) => if let Ok(i) = s.parse::<i64>() {
                                 match i {
                                     #(#indices2 => Some(#bindings3 as _),)*
                                     _ => None,
@@ -197,7 +197,7 @@ fn enum_member_body(data: &DataEnum) -> TokenStream {
                 quote! {
                     Self::#name { #(#bindings),* } => {
                         match field_name {
-                            ::clouseau::Value::String(s) => match s.as_str() {
+                            ::clouseau::core::Value::String(s) => match s.as_str() {
                                 #(stringify!(#bindings2) => { Some(#bindings2 as _) },)*
                                 _ => None,
                             }
