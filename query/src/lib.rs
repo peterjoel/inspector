@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::iter;
 
-type ValueFn = dyn for<'a> Fn(ValueIter<'a>) -> ValueIter<'a>;
+type ValueFn = dyn Fn(ValueIter<'_>) -> ValueIter<'_>;
 
 pub struct Context {
     vars: HashMap<String, Value>,
@@ -30,6 +30,14 @@ impl Default for Context {
 impl Context {
     pub fn with_var<V: Into<Value>, S: Into<String>>(mut self, name: S, val: V) -> Self {
         self.vars.insert(name.into(), val.into());
+        self
+    }
+
+    pub fn with_fun<F>(mut self, name: String, fun: F) -> Self
+    where
+        F: Fn(ValueIter<'_>) -> ValueIter<'_> + 'static,
+    {
+        self.fns.insert(name, Box::new(fun) as _);
         self
     }
 
