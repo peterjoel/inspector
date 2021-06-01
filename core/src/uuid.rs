@@ -4,6 +4,9 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 impl<'a> Queryable<'a> for Uuid {
+    fn name(&self) -> &'static str {
+        "Uuid"
+    }
     fn data(&self) -> Option<Value> {
         Some(Value::String(format!("{}", self)))
     }

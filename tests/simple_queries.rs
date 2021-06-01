@@ -59,8 +59,9 @@ fn select_integer() {
     let t = 123;
     let ctx = Context::default();
     let q = parse_query(".").unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &t).collect();
-    assert_eq!(result, vec_from![123]);
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["123"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -68,8 +69,9 @@ fn select_nth_from_vec() {
     let t = vec![7, 8, 9];
     let ctx = Context::default();
     let q = parse_query("./2").unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &t).collect();
-    assert_eq!(result, vec_from![9]);
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["9"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -77,8 +79,9 @@ fn select_all_from_vec() {
     let t = vec![7, 8, 9];
     let ctx = Context::default();
     let q = parse_query("./*").unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &t).collect();
-    assert_eq!(result, vec_from![7, 8, 9]);
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["7", "8", "9"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -86,8 +89,9 @@ fn select_all_from_vec_with_filter() {
     let t = vec![7, 8, 9];
     let ctx = Context::default();
     let q = parse_query("./*[. > 7]").unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &t).collect();
-    assert_eq!(result, vec_from![8, 9]);
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["8", "9"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -95,9 +99,28 @@ fn select_all_from_map() {
     let t = hash_map! { 7: 3, 8: 4, 9: 5 };
     let ctx = Context::default();
     let q = parse_query("./*").unwrap();
-    let mut result: Vec<Value> = ctx.exec(&q, &t).collect();
+    let mut result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
     result.sort();
-    assert_eq!(result, vec_from![3, 4, 5]);
+    let expected: Vec<String> = vec_from!["3", "4", "5"];
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn select_non_value() {
+    let ctx = Context::default();
+    let q = parse_query("./1/*").unwrap();
+    let result: Vec<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["[BTreeMap]", "[BTreeMap]"];
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn count_non_value() {
+    let ctx = Context::default().with_standard_fns();
+    let q = parse_query("./1/*.count()").unwrap();
+    let result: Vec<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["2"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -118,8 +141,9 @@ fn test_nested_filter() {
     };
     let ctx = Context::default();
     let q = parse_query("./*[./a = 15]/b").unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &t).collect();
-    assert_eq!(result, vec_from![16]);
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["16"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -132,17 +156,18 @@ fn enums() {
     ];
     let ctx = Context::default();
     let q = parse_query(r#"./*[. = "Two"]/0"#).unwrap();
-    let v: Vec<_> = ctx.exec(&q, &t).collect();
-    assert_eq!(v, vec_from!["x", "y"])
+    let v: Vec<_> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["x", "y"];
+    assert_eq!(v, expected);
 }
 
 #[test]
 fn complex_query() {
     let ctx = Context::default();
     let q = parse_query(r#"./*[./*/*/c/1 ?= "Two"]/*/*/a"#).unwrap();
-    let mut result: Vec<Value> = ctx.exec(&q, &example()).collect();
-    result.sort();
-    assert_eq!(result, vec_from![5, 7, 55]);
+    let result: Vec<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["7", "55", "5"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -158,16 +183,19 @@ fn compare_paths() {
     };
     let ctx = Context::default();
     let q = parse_query(r#"/b/*[. ?= /a/*]"#).unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &d).collect();
-    assert_eq!(result, vec_from![12]);
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["12"];
+    assert_eq!(result, expected);
 
     let q = parse_query(r#"/b/*[. ?>= /a/*]"#).unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &d).collect();
-    assert_eq!(result, vec_from![12, 15]);
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["12", "15"];
+    assert_eq!(result, expected);
 
     let q = parse_query(r#"/b/*[. >= /a/*]"#).unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &d).collect();
-    assert_eq!(result, vec_from![15]);
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["15"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -185,13 +213,15 @@ fn function_sum() {
     let ctx = Context::default().with_standard_fns();
     // sum all elements of `a`
     let q = parse_query(r#"/a/*.sum()"#).unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &d).collect();
-    assert_eq!(result, vec_from![60]);
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["60"];
+    assert_eq!(result, expected);
 
     // sum all elements of `a` that are also present in `b`
     let q = parse_query(r#"/a/*[. ?= /b/*].sum()"#).unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &d).collect();
-    assert_eq!(result, vec_from![26]);
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["26"];
+    assert_eq!(result, expected);
 }
 
 #[test]
@@ -209,11 +239,13 @@ fn function_count() {
     let ctx = Context::default().with_standard_fns();
     // count elements of `a`
     let q = parse_query(r#"/a/*.count()"#).unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &d).collect();
-    assert_eq!(result, vec_from![5]);
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["5"];
+    assert_eq!(result, expected);
 
     // count elements of `a` that are larger than some element of `b`
     let q = parse_query(r#"/a/*[. ?> /b/*].count()"#).unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &d).collect();
-    assert_eq!(result, vec_from![2]);
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["2"];
+    assert_eq!(result, expected);
 }

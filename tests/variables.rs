@@ -16,6 +16,7 @@ fn compare_paths() {
     };
     let ctx = Context::default().with_var("foo", 12);
     let q = parse_query(r#"/b/*[. >= $foo]"#).unwrap();
-    let result: Vec<Value> = ctx.exec(&q, &d).collect();
-    assert_eq!(result, vec_from![12, 15]);
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["12", "15"];
+    assert_eq!(result, expected);
 }

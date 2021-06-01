@@ -6,6 +6,9 @@ where
     T: Array,
     <T as Array>::Item: Queryable<'a>,
 {
+    fn name(&self) -> &'static str {
+        "ArrayVec"
+    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'a>> {
         match field {
             &Value::Int(i) if i >= 0 => self.get(i as usize).map(|val| val as _),
@@ -21,8 +24,5 @@ where
     }
     fn all(&'a self) -> TreeIter<'a> {
         TreeIter::from_queryables(self)
-    }
-    fn data(&self) -> Option<Value> {
-        None
     }
 }

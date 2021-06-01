@@ -55,6 +55,9 @@ macro_rules! value_int {
             }
 
             impl<'a> Queryable<'a> for $ty {
+                fn name(&self) -> &'static str {
+                    stringify!($ty)
+                }
                 fn data<'f>(&self) -> Option<Value> {
                     Some((*self).into())
                 }
@@ -138,6 +141,9 @@ macro_rules! value_float {
             }
 
             impl<'a> Queryable<'a> for $ty {
+                fn name(&self) -> &'static str {
+                    stringify!($ty)
+                }
                 fn data<'f>(&self) -> Option<Value> {
                     Some((*self).into())
                 }
@@ -208,41 +214,30 @@ where
     }
 }
 
-impl<'a> Queryable<'a> for bool {
-    fn data(&self) -> Option<Value> {
-        Some(self.into())
-    }
+macro_rules! into_queryable {
+    ($ty: ty) => {
+        impl<'a> Queryable<'a> for $ty {
+            fn name(&self) -> &'static str {
+                stringify!($ty)
+            }
+            fn data(&self) -> Option<Value> {
+                Some(self.into())
+            }
+        }
+        impl<'a> Queryable<'a> for &$ty {
+            fn name(&self) -> &'static str {
+                stringify!($ty)
+            }
+            fn data(&self) -> Option<Value> {
+                Some((*self).into())
+            }
+        }
+    };
 }
 
-impl<'a> Queryable<'a> for &bool {
-    fn data(&self) -> Option<Value> {
-        Some((*self).into())
-    }
-}
-
-impl<'a> Queryable<'a> for str {
-    fn data(&self) -> Option<Value> {
-        Some(self.into())
-    }
-}
-
-impl<'a> Queryable<'a> for &str {
-    fn data(&self) -> Option<Value> {
-        Some((*self).into())
-    }
-}
-
-impl<'a> Queryable<'a> for String {
-    fn data(&self) -> Option<Value> {
-        Some(self.into())
-    }
-}
-
-impl<'a> Queryable<'a> for &String {
-    fn data(&self) -> Option<Value> {
-        Some((*self).into())
-    }
-}
+into_queryable!(bool);
+into_queryable!(str);
+into_queryable!(String);
 
 impl<'a, K, V> Queryable<'a> for HashMap<K, V>
 where
@@ -255,7 +250,9 @@ where
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
     }
-
+    fn name(&self) -> &'static str {
+        "HashMap"
+    }
     fn all(&'a self) -> TreeIter<'a> {
         TreeIter::from_queryables(self.values())
     }
@@ -271,6 +268,9 @@ where
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
     }
+    fn name(&self) -> &'static str {
+        "BTreeMap"
+    }
 
     fn all(&'a self) -> TreeIter<'a> {
         TreeIter::from_queryables(self.values())
@@ -281,6 +281,9 @@ impl<'a, V> Queryable<'a> for BTreeSet<V>
 where
     V: Queryable<'a> + Ord + Eq,
 {
+    fn name(&self) -> &'static str {
+        "BTreeSet"
+    }
     fn all(&'a self) -> TreeIter<'a> {
         TreeIter::from_queryables(self)
     }
@@ -290,6 +293,9 @@ impl<'a, V> Queryable<'a> for HashSet<V>
 where
     V: Queryable<'a> + Hash + Eq,
 {
+    fn name(&self) -> &'static str {
+        "HashSet"
+    }
     fn all(&'a self) -> TreeIter<'a> {
         TreeIter::from_queryables(self)
     }
@@ -299,6 +305,9 @@ impl<'a, T> Queryable<'a> for Vec<T>
 where
     T: Queryable<'a>,
 {
+    fn name(&self) -> &'static str {
+        "Vec"
+    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
@@ -313,6 +322,9 @@ impl<'a, T> Queryable<'a> for VecDeque<T>
 where
     T: Queryable<'a>,
 {
+    fn name(&self) -> &'static str {
+        "VecDeque"
+    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
@@ -327,6 +339,9 @@ impl<'a, T> Queryable<'a> for Box<T>
 where
     T: Queryable<'a>,
 {
+    fn name(&self) -> &'static str {
+        self.as_ref().name()
+    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         self.as_ref().member(field)
     }
@@ -344,6 +359,9 @@ impl<'a, T> Queryable<'a> for Option<T>
 where
     T: Queryable<'a>,
 {
+    fn name(&self) -> &'static str {
+        "Option"
+    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         self.as_ref().and_then(|val| val.member(field))
     }
@@ -365,6 +383,9 @@ impl<'a, T, E> Queryable<'a> for Result<T, E>
 where
     T: Queryable<'a>,
 {
+    fn name(&self) -> &'static str {
+        "Result"
+    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         self.as_ref().ok().and_then(|val| val.member(field))
     }
@@ -383,6 +404,9 @@ where
 }
 
 impl<'a> Queryable<'a> for std::time::Duration {
+    fn name(&self) -> &'static str {
+        "Duration"
+    }
     fn data(&self) -> Option<Value> {
         Some(self.as_secs().into())
     }
@@ -392,6 +416,9 @@ impl<'a, T> Queryable<'a> for std::cmp::Reverse<T>
 where
     T: Queryable<'a>,
 {
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
     fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
         self.0.member(field)
     }
@@ -416,6 +443,9 @@ macro_rules! impl_tuples {
         where
             $($t: Queryable<'a>),+
         {
+            fn name (&self) -> &'static str {
+                stringify!(($($t,)+))
+            }
             fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
                 #[allow(clippy::collapsible_match)]
                 match field {
@@ -433,10 +463,6 @@ macro_rules! impl_tuples {
 
             fn all(&'a self) -> TreeIter<'a> {
                 TreeIter(Box::from(vec![$(&self.$ind as _),+].into_iter()))
-            }
-
-            fn data(&self) -> Option<Value> {
-                None
             }
         }
 
@@ -477,6 +503,9 @@ macro_rules! impl_arrays {
         where
             T: Queryable<'a>
         {
+            fn name(&self) -> &'static str {
+                stringify!([T; $size])
+            }
             fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
                 #[allow(clippy::collapsible_match)]
                 match field {
@@ -494,10 +523,6 @@ macro_rules! impl_arrays {
 
             fn all(&'a self) -> TreeIter<'a> {
                 TreeIter(Box::from(vec![$(&self[$ind] as _),*].into_iter()))
-            }
-
-            fn data(&self) -> Option<Value> {
-                None
             }
         }
 
@@ -536,4 +561,8 @@ impl_arrays!(
     8, 7, 6, 5, 4, 3, 2, 1, 0
 );
 
-impl<'a, T> Queryable<'a> for PhantomData<T> {}
+impl<'a, T> Queryable<'a> for PhantomData<T> {
+    fn name(&self) -> &'static str {
+        "PhantomData"
+    }
+}

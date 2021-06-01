@@ -2,9 +2,10 @@ mod std_fns;
 
 use clouseau_core::{Queryable, TreeIter, Value, ValueIter};
 use std::collections::HashMap;
+use std::fmt;
 use std::iter;
 
-type ValueFn = dyn Fn(ValueIter) -> ValueIter;
+type ValueFn = dyn for<'a> Fn(ValueIter<'a>) -> ValueIter<'a>;
 
 #[derive(Default)]
 pub struct Context {
@@ -37,7 +38,7 @@ impl Context {
         &'a self,
         q: &'a Query,
         data: &'a dyn Queryable<'a>,
-    ) -> impl Iterator<Item = Value> + 'a {
+    ) -> impl Iterator<Item = Box<dyn fmt::Display + 'a>> + 'a {
         let ctx = ContextInner {
             ctx: self,
             root: data,
@@ -125,8 +126,11 @@ impl Query {
         Self { path }
     }
 
-    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>) -> impl Iterator<Item = Value> + 'a {
-        self.path.exec(ctx, ctx.root)
+    pub fn exec<'a>(
+        &'a self,
+        ctx: ContextInner<'a>,
+    ) -> impl Iterator<Item = Box<dyn fmt::Display + 'a>> + 'a {
+        self.path.exec(ctx, ctx.root).map(|v| Box::new(v) as _)
     }
 }
 
@@ -173,12 +177,9 @@ impl Path {
     pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> ValueIter<'a> {
         let init = TreeIter(Box::new(iter::once(q as _)));
         let path_result = ValueIter::from_values(
-            self.segments
-                .iter()
-                .fold(init, move |i, segment| {
-                    TreeIter(Box::from(i.flat_map(move |qq| segment.exec(ctx, qq))))
-                })
-                .flat_map(|qq| Box::from(qq.data().into_iter())),
+            self.segments.iter().fold(init, move |i, segment| {
+                TreeIter(Box::from(i.flat_map(move |qq| segment.exec(ctx, qq))))
+            }), // .flat_map(|qq| qq.data().into_iter()),
         );
         self.functions
             .iter()
@@ -205,7 +206,7 @@ impl Call {
         if let Some(f) = ctx.fun(&self.0) {
             f(values)
         } else {
-            values
+            ValueIter::once(format!("** Function `{}` not found **", &self.0))
         }
     }
 }
@@ -220,13 +221,18 @@ impl Pred {
         }
     }
     pub fn filter<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> bool {
-        let mut values = self.path.exec(ctx, q).peekable();
+        let mut values = self
+            .path
+            .exec(ctx, q)
+            .filter_map(|v| v.into_value())
+            .peekable();
         match self.match_type {
             MatchType::Any => match &self.rhs {
                 OperatorRhs::Path(path) => {
                     values.peek().is_some()
                         && values.any(|v| {
-                            let mut rhs = path.exec(ctx, q).peekable();
+                            let mut rhs =
+                                path.exec(ctx, q).filter_map(|v| v.into_value()).peekable();
                             rhs.peek().is_some() && rhs.any(|r| self.compare.compare(&v, &r))
                         })
                 }
@@ -245,7 +251,8 @@ impl Pred {
                 OperatorRhs::Path(path) => {
                     values.peek().is_some()
                         && values.any(|v| {
-                            let mut rhs = path.exec(ctx, q).peekable();
+                            let mut rhs =
+                                path.exec(ctx, q).filter_map(|v| v.into_value()).peekable();
                             rhs.peek().is_some() && rhs.all(|r| self.compare.compare(&v, &r))
                         })
                 }

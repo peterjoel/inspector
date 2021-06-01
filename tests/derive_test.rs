@@ -1,7 +1,6 @@
 use clouseau::parse_query;
 use clouseau::{query::Context, Queryable};
 use std::marker::PhantomData;
-use velcro::vec_from;
 
 #[derive(Debug, Queryable)]
 struct Foo {
@@ -85,6 +84,6 @@ fn query_custom_struct() {
 
     let ctx = Context::default();
     let q = parse_query("./v/*/x[./1/a = 1]/2/b").unwrap();
-    let res: Vec<_> = ctx.exec(&q, &f).collect();
-    assert_eq!(res, vec_from!["ciao"]);
+    let res: Vec<_> = ctx.exec(&q, &f).map(|v| v.to_string()).collect();
+    assert_eq!(res, vec![String::from("ciao")]);
 }
