@@ -116,7 +116,7 @@ fn select_non_value() {
 
 #[test]
 fn count_non_value() {
-    let ctx = Context::default().with_standard_fns();
+    let ctx = Context::default();
     let q = parse_query("./1/*.count()").unwrap();
     let result: Vec<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
     let expected: Vec<String> = vec_from!["2"];
@@ -210,7 +210,7 @@ fn function_sum() {
         b: vec![12, 14, 16, 18],
     };
 
-    let ctx = Context::default().with_standard_fns();
+    let ctx = Context::default();
     // sum all elements of `a`
     let q = parse_query(r#"/a/*.sum()"#).unwrap();
     let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
@@ -236,7 +236,7 @@ fn function_count() {
         b: vec![12, 14, 16, 18],
     };
 
-    let ctx = Context::default().with_standard_fns();
+    let ctx = Context::default();
     // count elements of `a`
     let q = parse_query(r#"/a/*.count()"#).unwrap();
     let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();

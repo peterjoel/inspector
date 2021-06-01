@@ -7,28 +7,27 @@ use std::iter;
 
 type ValueFn = dyn for<'a> Fn(ValueIter<'a>) -> ValueIter<'a>;
 
-#[derive(Default)]
 pub struct Context {
     vars: HashMap<String, Value>,
     fns: HashMap<String, Box<ValueFn>>,
 }
 
-impl Context {
-    pub fn with_standard_fns(mut self) -> Self {
-        self.fns.insert(String::from("sum"), Box::new(std_fns::sum));
-        self.fns
-            .insert(String::from("count"), Box::new(std_fns::count));
-        self.fns.insert(String::from("min"), Box::new(std_fns::min));
-        self.fns.insert(String::from("max"), Box::new(std_fns::max));
-        self.fns
-            .insert(String::from("distinct"), Box::new(std_fns::distinct));
-        self.fns
-            .insert(String::from("first"), Box::new(std_fns::first));
-        self.fns
-            .insert(String::from("last"), Box::new(std_fns::last));
-        self
+impl Default for Context {
+    fn default() -> Self {
+        let mut fns: HashMap<String, Box<ValueFn>> = HashMap::new();
+        fns.insert(String::from("sum"), Box::new(std_fns::sum));
+        fns.insert(String::from("count"), Box::new(std_fns::count));
+        fns.insert(String::from("min"), Box::new(std_fns::min));
+        fns.insert(String::from("max"), Box::new(std_fns::max));
+        fns.insert(String::from("distinct"), Box::new(std_fns::distinct));
+        fns.insert(String::from("first"), Box::new(std_fns::first));
+        fns.insert(String::from("last"), Box::new(std_fns::last));
+        let vars = HashMap::new();
+        Context { fns, vars }
     }
+}
 
+impl Context {
     pub fn with_var<V: Into<Value>, S: Into<String>>(mut self, name: S, val: V) -> Self {
         self.vars.insert(name.into(), val.into());
         self
