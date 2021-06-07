@@ -1,3 +1,4 @@
+pub use clouseau_core::{Error, Node, NodeOrValueIter, Queryable, Value};
 #[cfg(feature = "derive")]
 pub use clouseau_macros::Queryable;
 
