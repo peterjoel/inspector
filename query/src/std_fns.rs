@@ -55,37 +55,27 @@ pub fn min<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
 }
 
 pub fn first<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
-    match process_results(
-        input
-            .map_ok(NodeOrValue::try_into_int)
-            .map(|v| v.and_then(|r| r)), // flatten
-        |iter| iter.take(1).next(),
-    )
-    .transpose()
-    .ok_or(Error::Empty("first()"))
+    match process_results(input, |iter| iter.take(1).next())
+        .transpose()
+        .ok_or(Error::Empty("first()"))
     {
         Err(e) | Ok(Err(e)) => NodeOrValueIter::one(Err(e)),
-        Ok(Ok(min)) => NodeOrValueIter::one_value(Value::from(min)),
+        Ok(node) => NodeOrValueIter::one(node),
     }
 }
 
 pub fn last<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
-    match process_results(
-        input
-            .map_ok(NodeOrValue::try_into_int)
-            .map(|v| v.and_then(|r| r)), // flatten
-        |iter| {
-            iter.fold(None, |mut last, val| {
-                last.replace(val);
-                last
-            })
-        },
-    )
+    match process_results(input, |iter| {
+        iter.fold(None, |mut last, val| {
+            last.replace(val);
+            last
+        })
+    })
     .transpose()
     .ok_or(Error::Empty("last()"))
     {
         Err(e) | Ok(Err(e)) => NodeOrValueIter::one(Err(e)),
-        Ok(Ok(min)) => NodeOrValueIter::one_value(Value::from(min)),
+        Ok(node) => NodeOrValueIter::one(node),
     }
 }
 

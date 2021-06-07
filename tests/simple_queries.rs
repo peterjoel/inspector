@@ -106,6 +106,46 @@ fn select_all_from_map() {
 }
 
 #[test]
+fn select_first_value() {
+    let t = vec![7, 8, 9];
+    let ctx = Context::default();
+    let q = parse_query("./*.first()").unwrap();
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["7"];
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn select_last_value() {
+    let t = vec![7, 8, 9];
+    let ctx = Context::default();
+    let q = parse_query("./*.last()").unwrap();
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["9"];
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn select_first_non_value() {
+    let t = vec![vec![7], vec![8], vec![9]];
+    let ctx = Context::default();
+    let q = parse_query("./*.first()/0").unwrap();
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["7"];
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn select_last_non_value() {
+    let t = vec![vec![7], vec![8], vec![9]];
+    let ctx = Context::default();
+    let q = parse_query("./*.last()/0").unwrap();
+    let result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["9"];
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn select_non_value() {
     let ctx = Context::default();
     let q = parse_query("./1/*").unwrap();
@@ -187,15 +227,15 @@ fn compare_paths() {
     let expected: Vec<String> = vec_from!["12"];
     assert_eq!(result, expected);
 
-    // let q = parse_query(r#"/b/*[. ?>= /a/*]"#).unwrap();
-    // let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
-    // let expected: Vec<String> = vec_from!["12", "15"];
-    // assert_eq!(result, expected);
+    let q = parse_query(r#"/b/*[. ?>= /a/*]"#).unwrap();
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["12", "15"];
+    assert_eq!(result, expected);
 
-    // let q = parse_query(r#"/b/*[. >= /a/*]"#).unwrap();
-    // let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
-    // let expected: Vec<String> = vec_from!["15"];
-    // assert_eq!(result, expected);
+    let q = parse_query(r#"/b/*[. >= /a/*]"#).unwrap();
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["15"];
+    assert_eq!(result, expected);
 }
 
 #[test]
