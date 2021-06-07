@@ -1,21 +1,16 @@
 query = { SOI ~ path ~ EOI }
 path = {
-    (absolute ~ segment ~ filter? 
-        | relative ~ segment ~ filter?
-        | current ~ filter?)
-    ~ ("/" ~ segment ~ filter?)* 
-    ~ ("." ~ call)* 
+    (absolute | relative) ~ selector*
 }
-absolute = @{ "/" }
-current = @{ "." }
+selector = { segment | filter | call }
+absolute = @{ &"/" }
 relative = @{ "." }
-segment = { wildcard | "key:" ~ literal | ident | integer }
+segment = { "/" ~ (wildcard | "key:" ~ literal | ident | integer) }
 wildcard = @{ "*" }
-filter = { "[" ~ filter_cond ~ "]" }
-filter_cond = { path ~ op_compare ~ op_rhs }
+filter = { "[" ~ path ~ op_compare ~ op_rhs ~ "]" }
 op_rhs = { path | literal | var }
 var = { "$" ~ ident }
-call = { ident ~ "("  ~ ")" }
+call = { "." ~ ident ~ "("  ~ ")" }
 op_compare = @{ "?"? ~ ("<=" | ">=" | "=" | ">" | "<") }
 ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 literal = { array | bool | integer | string }

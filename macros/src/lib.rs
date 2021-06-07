@@ -13,7 +13,8 @@ pub fn derive_queryable(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
 fn impl_queryable(input: DeriveInput) -> TokenStream {
     let name = &input.ident;
-    let q_life = &Lifetime::new("'__clouseau_a", Span::call_site());
+    let q_life = &Lifetime::new("'__clouseau_q", Span::call_site());
+    let a_life = &Lifetime::new("'__clouseau_a", Span::call_site());
     let (impl_generics, type_generics, where_clause) =
         create_generics(q_life.clone(), &input.generics);
     let (member_body, all_body, data_body) = match &input.data {
@@ -34,11 +35,13 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
             fn name(&self) -> &'static str {
                 stringify!(#name)
             }
-            fn member<'f>(&#q_life self, field_name: &'f ::clouseau::core::Value) -> Option<&#q_life dyn ::clouseau::core::Queryable<#q_life>> {
+            fn member<#a_life, 'f>(&#a_life self, field_name: &'f ::clouseau::core::Value) ->
+                Option<::clouseau::core::Node<#a_life, #q_life>>
+            {
                 #member_body
             }
-            fn all(&#q_life self) -> ::clouseau::core::TreeIter<#q_life> {
-                ::clouseau::core::TreeIter(#all_body)
+            fn all<#a_life>(&#a_life self) -> ::clouseau::core::NodeOrValueIter<#a_life, #q_life> {
+                #all_body
             }
             fn data(&self) -> Option<::clouseau::core::Value> {
                 #data_body
@@ -60,22 +63,17 @@ impl<'a> ToTokens for ImplGenerics<'a> {
 }
 
 fn create_generics(
-    clouseau_lifetime: Lifetime,
+    q_life: Lifetime,
     generics: &Generics,
 ) -> (ImplGenerics<'_>, TypeGenerics<'_>, WhereClause) {
-    let lifetime = &clouseau_lifetime;
     let where_clause = where_clause_with_bound(
         generics,
         quote! {
-            ::clouseau::core::Queryable<#lifetime>
+            ::clouseau::core::Queryable<#q_life>
         },
     );
     let (_, type_generics, _) = generics.split_for_impl();
-    (
-        ImplGenerics(generics, clouseau_lifetime),
-        type_generics,
-        where_clause,
-    )
+    (ImplGenerics(generics, q_life), type_generics, where_clause)
 }
 
 fn where_clause_with_bound(generics: &Generics, bound: TokenStream) -> WhereClause {
@@ -100,8 +98,8 @@ fn struct_member_body(data: &DataStruct) -> TokenStream {
             if fields.unnamed.len() == 1 {
                 quote! { self.0.member(field_name) }
             } else {
-                let indices = (0..fields.unnamed.len() as i64).map(|i| Literal::i64_unsuffixed(i));
-                let indices2 = (0..fields.unnamed.len()).map(|i| Literal::usize_unsuffixed(i));
+                let indices = (0..fields.unnamed.len() as i64).map(Literal::i64_unsuffixed);
+                let indices2 = (0..fields.unnamed.len()).map(Literal::usize_unsuffixed);
                 quote! {
                     match field_name {
                         #(
@@ -137,19 +135,19 @@ fn struct_member_body(data: &DataStruct) -> TokenStream {
 fn struct_all_body(data: &DataStruct) -> TokenStream {
     match &data.fields {
         Fields::Unnamed(fields) => {
-            let indices = (0..fields.unnamed.len() as i64).map(|i| Literal::i64_unsuffixed(i));
+            let indices = (0..fields.unnamed.len() as i64).map(Literal::i64_unsuffixed);
             quote! {
-                Box::from(vec![#(&self.#indices as _),*].into_iter())
+                ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(&self.#indices as _),*])
             }
         }
         Fields::Named(fields) => {
             let names = fields.named.iter().filter_map(|named| named.ident.as_ref());
             quote! {
-                Box::from(vec![#(&self.#names as _),*].into_iter())
+                ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(&self.#names as _),*])
             }
         }
         Fields::Unit => quote! {
-            Box::from(std::iter::empty())
+            ::clouseau::core::NodeOrValueIter::empty()
         },
     }
 }
@@ -172,7 +170,7 @@ fn enum_member_body(data: &DataEnum) -> TokenStream {
                     .map(|i| Ident::new(&format!("f{}", i), fields.span()));
                 let bindings2 = bindings.clone();
                 let bindings3 = bindings.clone();
-                let indices = (0..fields.unnamed.len() as i64).map(|i| Literal::i64_unsuffixed(i));
+                let indices = (0..fields.unnamed.len() as i64).map(Literal::i64_unsuffixed);
                 let indices2 = indices.clone();
                 quote! {
                     Self::#name(#(#bindings),*) => {
@@ -229,19 +227,19 @@ fn enum_all_body(data: &DataEnum) -> TokenStream {
                     .map(|i| Ident::new(&format!("f{}", i), fields.span()));
                 let bindings2 = bindings.clone();
                 quote! {
-                    Self::#name(#(#bindings),*) => Box::from(vec![#(#bindings2 as _,)*].into_iter())
+                    Self::#name(#(#bindings),*) => ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(#bindings2 as _,)*])
                 }
             }
             Fields::Named(fields) => {
                 let bindings = fields.named.iter().map(|field| &field.ident);
                 let bindings2 = bindings.clone();
                 quote! {
-                    Self::#name { #(#bindings),* } => Box::from(vec![#(#bindings2 as _,)*].into_iter())
+                    Self::#name { #(#bindings),* } => ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(#bindings2 as _,)*])
                 }
             }
             Fields::Unit => {
                 quote! {
-                    Self::#name => Box::from(std::iter::empty())
+                    Self::#name => ::clouseau::core::NodeOrValueIter::empty()
                 }
             }
         }

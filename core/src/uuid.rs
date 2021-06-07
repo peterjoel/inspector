@@ -1,4 +1,4 @@
-use super::{Queryable, Value, ValueConvertError};
+use super::{Error, Queryable, Value};
 use std::convert::TryFrom;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -13,11 +13,11 @@ impl<'a> Queryable<'a> for Uuid {
 }
 
 impl TryFrom<Value> for Uuid {
-    type Error = ValueConvertError;
-    fn try_from(value: Value) -> Result<Self, ValueConvertError> {
+    type Error = Error;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::String(s) => Uuid::from_str(&s).map_err(|_| ValueConvertError),
-            _ => Err(ValueConvertError),
+            Value::String(s) => Uuid::from_str(&s).map_err(|_| Error::TypeError),
+            _ => Err(Error::TypeError),
         }
     }
 }

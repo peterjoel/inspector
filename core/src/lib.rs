@@ -9,43 +9,28 @@ use float::WellBehavedF64;
 use std::fmt;
 use std::iter;
 use std::rc::Rc;
+use thiserror::Error;
 
-#[derive(Debug)]
-pub enum ValueOrQueryable<'a> {
-    Value(Value),
-    Queryable(&'a dyn Queryable<'a>),
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Expected value")]
+    ExpectedValue,
+    #[error("Expected node")]
+    ExpectedNode,
+    // TODO include names of actual and expected types
+    #[error("Type error")]
+    TypeError,
+    #[error("Expected integer")]
+    ExpectedInt,
+    #[error("Variable not found")]
+    VarNotFound,
+    #[error("Input is empty in {0}")]
+    Empty(&'static str),
 }
 
-impl<'a> ValueOrQueryable<'a> {
-    pub fn into_value(&self) -> Option<Value> {
-        match self {
-            ValueOrQueryable::Value(val) => Some(val.clone()),
-            _ => None,
-        }
-    }
-    pub fn make_value(&self) -> Value {
-        match self {
-            ValueOrQueryable::Value(val) => val.clone(),
-            ValueOrQueryable::Queryable(q) => (*q).into(),
-        }
-    }
-}
+pub type Result<T> = std::result::Result<T, Error>;
 
-pub struct ValueIter<'a>(pub Box<dyn Iterator<Item = ValueOrQueryable<'a>> + 'a>);
-pub struct TreeIter<'a>(pub Box<dyn Iterator<Item = &'a dyn Queryable<'a>> + 'a>);
-
-pub trait Queryable<'a> {
-    fn member<'f>(&'a self, _: &'f Value) -> Option<&'a dyn Queryable<'a>> {
-        None
-    }
-    fn all(&'a self) -> TreeIter<'a> {
-        TreeIter::empty()
-    }
-    fn name(&self) -> &'static str;
-    fn data(&self) -> Option<Value> {
-        None
-    }
-}
+pub type Node<'a, 'q> = &'a (dyn Queryable<'q> + 'a);
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum Value {
@@ -54,6 +39,187 @@ pub enum Value {
     Float(WellBehavedF64),
     Bool(bool),
     Array(Array),
+}
+
+pub struct ValueIter<'a>(pub Box<dyn Iterator<Item = Value> + 'a>);
+
+impl<'a> ValueIter<'a> {
+    pub fn empty() -> Self {
+        ValueIter(Box::new(iter::empty()))
+    }
+
+    pub fn once<V: Into<Value>>(val: V) -> Self {
+        ValueIter(Box::new(iter::once(val.into())))
+    }
+
+    pub fn from_values<T: 'a>(values: impl IntoIterator<Item = T> + 'a) -> Self
+    where
+        T: Into<Value>,
+    {
+        ValueIter(Box::from(values.into_iter().map(|v| v.into())))
+    }
+}
+
+impl<'a> Iterator for ValueIter<'a> {
+    type Item = Value;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
+
+pub struct NodeIter<'a, 'q>(pub Box<dyn Iterator<Item = Node<'a, 'q>> + 'a>);
+
+impl<'a, 'q> NodeIter<'a, 'q> {
+    pub fn empty() -> NodeIter<'a, 'q> {
+        NodeIter(Box::new(iter::empty()))
+    }
+
+    pub fn from_queryables<Q>(queryables: impl IntoIterator<Item = &'a Q> + 'a) -> Self
+    where
+        Q: Queryable<'q> + 'a,
+    {
+        NodeIter(Box::from(queryables.into_iter().map(|q| q as _)))
+    }
+}
+
+impl<'a, 'q> Iterator for NodeIter<'a, 'q> {
+    type Item = Node<'a, 'q>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
+
+#[derive(Debug)]
+pub enum NodeOrValue<'a, 'q> {
+    Node(Node<'a, 'q>),
+    Value(Value),
+}
+
+impl<'a, 'q> NodeOrValue<'a, 'q> {
+    pub fn try_into_int(self) -> Result<i64> {
+        self.try_into_value()
+            .map_err(|_| Error::ExpectedInt)
+            .and_then(Value::try_into_int)
+    }
+
+    pub fn try_into_value(self) -> Result<Value> {
+        match self {
+            NodeOrValue::Node(node) => {
+                if let Some(data) = node.data() {
+                    Ok(data)
+                } else {
+                    Err(Error::ExpectedValue)
+                }
+            }
+            NodeOrValue::Value(v) => Ok(v),
+        }
+    }
+
+    pub fn try_into_node(self) -> Result<Node<'a, 'q>> {
+        match self {
+            NodeOrValue::Node(n) => Ok(n),
+            NodeOrValue::Value(_) => Err(Error::ExpectedNode),
+        }
+    }
+}
+
+impl<'a, 'q> From<Value> for NodeOrValue<'a, 'q> {
+    fn from(v: Value) -> Self {
+        NodeOrValue::Value(v)
+    }
+}
+
+impl<'a, 'q> From<Node<'a, 'q>> for NodeOrValue<'a, 'q> {
+    fn from(n: Node<'a, 'q>) -> Self {
+        NodeOrValue::Node(n)
+    }
+}
+
+impl<'a, 'q> fmt::Display for NodeOrValue<'a, 'q> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NodeOrValue::Node(node) => write!(f, "{}", node),
+            NodeOrValue::Value(value) => write!(f, "{}", value),
+        }
+    }
+}
+
+pub struct NodeOrValueIter<'a, 'q>(Box<dyn Iterator<Item = Result<NodeOrValue<'a, 'q>>> + 'a>);
+
+impl<'a, 'q> NodeOrValueIter<'a, 'q> {
+    pub fn empty() -> Self {
+        NodeOrValueIter(Box::new(iter::empty()))
+    }
+
+    pub fn one(item: Result<NodeOrValue<'a, 'q>>) -> Self {
+        NodeOrValueIter(Box::new(iter::once(item)))
+    }
+
+    pub fn one_node(node: Node<'a, 'q>) -> Self {
+        Self::from_raw(iter::once(node).map(|n| Ok(n.into())))
+    }
+
+    pub fn one_value(value: Value) -> Self {
+        Self::from_raw(iter::once(value).map(|v| Ok(v.into())))
+    }
+
+    pub fn from_queryables<I, Q>(nodes: I) -> Self
+    where
+        I: IntoIterator<Item = &'a Q> + 'a,
+        Q: Queryable<'q> + 'a,
+    {
+        NodeOrValueIter(Box::new(
+            nodes.into_iter().map(|node| Ok(NodeOrValue::Node(node))),
+        ))
+    }
+
+    pub fn from_nodes<I>(nodes: I) -> Self
+    where
+        I: IntoIterator<Item = &'a dyn Queryable<'q>> + 'a,
+    {
+        NodeOrValueIter(Box::new(
+            nodes.into_iter().map(|node| Ok(NodeOrValue::Node(node))),
+        ))
+    }
+
+    pub fn from_values<I>(values: I) -> Self
+    where
+        I: IntoIterator + 'a,
+        I::Item: Into<Value>,
+    {
+        NodeOrValueIter(Box::new(
+            values
+                .into_iter()
+                .map(|value| Ok(NodeOrValue::Value(value.into()))),
+        ))
+    }
+
+    pub fn from_raw<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = Result<NodeOrValue<'a, 'q>>> + 'a,
+    {
+        NodeOrValueIter(Box::new(iter.into_iter()))
+    }
+}
+
+impl<'a, 'q> Iterator for NodeOrValueIter<'a, 'q> {
+    type Item = Result<NodeOrValue<'a, 'q>>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
+
+pub trait Queryable<'q> {
+    fn member<'a, 'f>(&'a self, _: &'f Value) -> Option<Node<'a, 'q>> {
+        None
+    }
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::empty()
+    }
+    fn name(&self) -> &'static str;
+    fn data(&self) -> Option<Value> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -99,15 +265,12 @@ impl Iterator for ArrayIter {
 }
 
 impl Value {
-    pub fn into_int(self) -> Option<i64> {
+    pub fn try_into_int(self) -> Result<i64> {
         if let Value::Int(i) = self {
-            Some(i)
+            Ok(i)
         } else {
-            None
+            Err(Error::ExpectedInt)
         }
-    }
-    pub fn into_value_or_queryable(self) -> ValueOrQueryable<'static> {
-        ValueOrQueryable::Value(self)
     }
 }
 
@@ -123,125 +286,18 @@ impl fmt::Display for Value {
     }
 }
 
-impl<'a> fmt::Display for ValueOrQueryable<'a> {
+impl<'a, 'q> fmt::Display for Node<'a, 'q> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ValueOrQueryable::Value(v) => write!(f, "{}", v),
-            ValueOrQueryable::Queryable(q) => write!(f, "[{}]", q.name()),
-        }
-    }
-}
-
-impl<'a> ValueIter<'a> {
-    pub fn empty() -> Self {
-        ValueIter(Box::new(iter::empty()))
-    }
-
-    pub fn once<V: Into<Value>>(val: V) -> Self {
-        ValueIter(Box::new(iter::once(ValueOrQueryable::Value(val.into()))))
-    }
-
-    pub fn from_nodes<I>(values: I) -> Self
-    where
-        I: Iterator<Item = ValueOrQueryable<'a>> + 'a,
-    {
-        ValueIter(Box::new(values) as _)
-    }
-
-    pub fn from_values<T: 'a>(values: impl IntoIterator<Item = T> + 'a) -> Self
-    where
-        Value: From<T>,
-    {
-        ValueIter(Box::from(
-            values
-                .into_iter()
-                .map(|v| ValueOrQueryable::Value(v.into())),
-        ))
-    }
-}
-
-impl<'a> TreeIter<'a> {
-    pub fn empty() -> Self {
-        TreeIter(Box::new(iter::empty()))
-    }
-
-    pub fn from_queryables<Q>(queryables: impl IntoIterator<Item = &'a Q> + 'a) -> Self
-    where
-        Q: Queryable<'a> + 'a,
-    {
-        TreeIter(Box::from(queryables.into_iter().map(|q| q as _)))
-    }
-}
-
-impl<'a> Iterator for ValueIter<'a> {
-    type Item = ValueOrQueryable<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
-}
-
-impl<'a> Queryable<'a> for Value {
-    fn name(&self) -> &'static str {
-        "Value"
-    }
-    fn data(&self) -> Option<Value> {
-        Some(self.clone())
-    }
-}
-
-impl<'a> Iterator for TreeIter<'a> {
-    type Item = &'a dyn Queryable<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
-}
-
-impl<'a> Queryable<'a> for ValueOrQueryable<'a> {
-    fn name(&self) -> &'static str {
-        "_"
-    }
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'a>> {
-        if let ValueOrQueryable::Queryable(q) = self {
-            q.member(field)
+        if let Some(data) = self.data() {
+            write!(f, "{}", data)
         } else {
-            None
-        }
-    }
-    fn all(&'a self) -> TreeIter<'a> {
-        if let ValueOrQueryable::Queryable(q) = self {
-            q.all()
-        } else {
-            TreeIter::empty()
-        }
-    }
-    fn data(&self) -> Option<Value> {
-        match self {
-            ValueOrQueryable::Value(v) => Some(v.clone()),
-            ValueOrQueryable::Queryable(q) => q.data(),
+            write!(f, "[{}]", self.name())
         }
     }
 }
 
-impl<'a> From<&'a dyn Queryable<'a>> for Value {
-    fn from(q: &'a dyn Queryable<'a>) -> Value {
-        match q.data() {
-            Some(v) => v,
-            None => Value::from(format!("[{}]", q.name())),
-        }
-    }
-}
-
-impl<'a> fmt::Debug for &'a dyn Queryable<'a> {
+impl<'a, 'q> fmt::Debug for &'a dyn Queryable<'q> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[{}]", self.name())
+        write!(f, "[{} {:?}]", self.name(), self.data())
     }
 }
-
-impl<'a> fmt::Display for &'a dyn Queryable<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name())
-    }
-}
-
-// TODO add more detail to this error
-pub struct ValueConvertError;

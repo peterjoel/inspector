@@ -33,25 +33,30 @@ pub fn parse_query(input: &str) -> Result<Query> {
 }
 
 fn parse_path(pair: Pair<Rule>) -> Result<Path> {
-    pair.into_inner().fold(Ok(Path::default()), |path, pair| {
-        path.and_then(|path| match pair.as_rule() {
-            Rule::absolute => Ok(path.append_segment(SegmentType::Root.into_segment())),
-            Rule::relative | Rule::current => {
-                Ok(path.append_segment(SegmentType::Current.into_segment()))
+    let mut path = Path::default();
+    for pair in pair.into_inner() {
+        match pair.as_rule() {
+            Rule::absolute => {
+                path.add_selector(Selector::Segment(SegmentType::Root.into_segment()))
             }
-            Rule::segment => {
-                Ok(path
-                    .append_segment(parse_segment(pair.into_inner().next().ok_or(Error::Pest)?)?))
+            Rule::relative => {
+                path.add_selector(Selector::Segment(SegmentType::Current.into_segment()))
             }
-            Rule::filter => {
-                Ok(path.append_filter(parse_filter(pair.into_inner().next().ok_or(Error::Pest)?)?))
-            }
-            Rule::call => Ok(path
-                .append_function_call(parse_call(pair.into_inner().next().ok_or(Error::Pest)?)?)),
-            Rule::EOI => Ok(path),
-            _ => Err(Error::Pest),
-        })
-    })
+            Rule::selector => path.add_selector(parse_selector(pair)?),
+            _ => return Err(Error::Pest),
+        }
+    }
+    Ok(path)
+}
+
+fn parse_selector(pair: Pair<Rule>) -> Result<Selector> {
+    let pair = pair.into_inner().next().ok_or(Error::Pest)?;
+    match pair.as_rule() {
+        Rule::segment => Ok(Selector::Segment(parse_segment(pair)?)),
+        Rule::filter => Ok(Selector::Filter(parse_filter(pair)?)),
+        Rule::call => Ok(Selector::Call(parse_call(pair)?)),
+        _ => Err(Error::Pest),
+    }
 }
 
 fn parse_var(pair: Pair<Rule>) -> Result<String> {
@@ -65,6 +70,7 @@ fn parse_var(pair: Pair<Rule>) -> Result<String> {
 }
 
 fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
+    let pair = pair.into_inner().next().ok_or(Error::Pest)?;
     match pair.as_rule() {
         Rule::wildcard => Ok(SegmentType::Children.into_segment()),
         Rule::ident | Rule::integer => Ok(SegmentType::Child(pair.as_str().into()).into_segment()),
@@ -73,11 +79,12 @@ fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     }
 }
 
-fn parse_call(pair: Pair<Rule>) -> Result<String> {
+fn parse_call(pair: Pair<Rule>) -> Result<Call> {
+    let pair = pair.into_inner().next().ok_or(Error::Pest)?;
     let name = pair.as_str().to_string();
     let rule = pair.as_rule();
     match rule {
-        Rule::ident => Ok(name),
+        Rule::ident => Ok(Call::new(name)),
         _ => Err(Error::Pest),
     }
 }

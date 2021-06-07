@@ -1,28 +1,20 @@
-use super::{Queryable, TreeIter, Value};
+use super::{NodeOrValueIter, Queryable, Value};
 use arrayvec::{Array, ArrayVec};
+use std::convert::TryFrom;
 
-impl<'a, T> Queryable<'a> for ArrayVec<T>
+impl<'q, T> Queryable<'q> for ArrayVec<T>
 where
     T: Array,
-    <T as Array>::Item: Queryable<'a>,
+    <T as Array>::Item: Queryable<'q>,
 {
     fn name(&self) -> &'static str {
         "ArrayVec"
     }
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'a>> {
-        match field {
-            &Value::Int(i) if i >= 0 => self.get(i as usize).map(|val| val as _),
-            Value::String(s) => {
-                if let Ok(i) = s.parse::<usize>() {
-                    self.get(i).map(|val| val as _)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+        let index = usize::try_from(field).ok()?;
+        self.get(index).map(|v| v as _)
     }
-    fn all(&'a self) -> TreeIter<'a> {
-        TreeIter::from_queryables(self)
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::from_queryables(self)
     }
 }

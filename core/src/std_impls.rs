@@ -1,4 +1,4 @@
-use crate::{Queryable, TreeIter, Value, ValueConvertError};
+use crate::{Error, NodeOrValueIter, Queryable, Value};
 use std::borrow::Cow;
 use std::collections::*;
 use std::convert::{TryFrom, TryInto};
@@ -24,31 +24,31 @@ macro_rules! value_int {
             }
 
             impl TryFrom<Value> for $ty {
-                type Error = ValueConvertError;
+                type Error = Error;
                 fn try_from(value: Value) -> Result<Self, Self::Error> {
                     Self::try_from(&value)
                 }
             }
 
             impl TryFrom<&Value> for $ty {
-                type Error = ValueConvertError;
+                type Error = Error;
                 fn try_from(value: &Value) -> Result<Self, Self::Error> {
                     match value {
                         &Value::Int(v) => {
-                            $( let v: $via = v.try_into().map_err(|_|ValueConvertError)?; )?
-                            v.try_into().map_err(|_| ValueConvertError)
+                            $( let v: $via = v.try_into().map_err(|_|Error::TypeError)?; )?
+                            v.try_into().map_err(|_| Error::TypeError)
                         },
-                        Value::String(s) => s.parse().map_err(|_| ValueConvertError),
+                        Value::String(s) => s.parse().map_err(|_| Error::TypeError),
                         &Value::Bool(b) => if b {
-                            1.try_into().map_err(|_| ValueConvertError)
+                            1.try_into().map_err(|_| Error::TypeError)
                         } else {
-                            0.try_into().map_err(|_| ValueConvertError)
+                            0.try_into().map_err(|_| Error::TypeError)
                         }
-                        Value::Array(_) => Err(ValueConvertError),
+                        Value::Array(_) => Err(Error::TypeError),
                         &Value::Float(f) => if *f >= i64::min_value() as f64 && *f <= i64::max_value() as f64 {
                             <$ty>::try_from(Value::Int(*f as i64))
                         } else {
-                            Err(ValueConvertError)
+                            Err(Error::TypeError)
                         }
                     }
                 }
@@ -111,30 +111,30 @@ macro_rules! value_float {
             }
 
             impl TryFrom<Value> for $ty {
-                type Error = ValueConvertError;
+                type Error = Error;
                 fn try_from(value: Value) -> Result<Self, Self::Error> {
                     Self::try_from(&value)
                 }
             }
 
             impl TryFrom<&Value> for $ty {
-                type Error = ValueConvertError;
+                type Error = Error;
                 fn try_from(value: &Value) -> Result<Self, Self::Error> {
                     match value {
                         &Value::Int(v) => {
                             Ok((v as $ty).into())
                         },
-                        Value::String(s) => s.parse().map_err(|_| ValueConvertError),
+                        Value::String(s) => s.parse().map_err(|_| Error::TypeError),
                         &Value::Bool(b) => if b {
                             Ok(1.0)
                         } else {
                             Ok(0.0)
                         }
-                        Value::Array(_) => Err(ValueConvertError),
+                        Value::Array(_) => Err(Error::TypeError),
                         &Value::Float(f) => if *f >= $ty::MIN as f64 && *f <= $ty::MAX as f64 {
                             Ok(*f as $ty)
                         } else {
-                            Err(ValueConvertError)
+                            Err(Error::TypeError)
                         }
                     }
                 }
@@ -185,8 +185,8 @@ impl From<&String> for Value {
 }
 
 impl TryFrom<Value> for String {
-    type Error = ValueConvertError;
-    fn try_from(v: Value) -> Result<String, ValueConvertError> {
+    type Error = Error;
+    fn try_from(v: Value) -> Result<String, Error> {
         match v {
             Value::Int(i) => Ok(i.to_string()),
             Value::String(s) => Ok(s),
@@ -195,7 +195,7 @@ impl TryFrom<Value> for String {
                 if arr.0.len() == 1 {
                     Ok(arr.0[0].to_string())
                 } else {
-                    Err(ValueConvertError)
+                    Err(Error::TypeError)
                 }
             }
             Value::Float(f) => Ok(f.to_string()),
@@ -239,32 +239,32 @@ into_queryable!(bool);
 into_queryable!(str);
 into_queryable!(String);
 
-impl<'a, K, V> Queryable<'a> for HashMap<K, V>
+impl<'q, K, V> Queryable<'q> for HashMap<K, V>
 where
     // TODO get rid of the Clone constraint
-    K: Queryable<'a> + Hash + Eq + Clone,
-    V: Queryable<'a>,
+    K: Queryable<'q> + Hash + Eq + Clone,
+    V: Queryable<'q>,
     K: TryFrom<Value>,
 {
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'a>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
     }
     fn name(&self) -> &'static str {
         "HashMap"
     }
-    fn all(&'a self) -> TreeIter<'a> {
-        TreeIter::from_queryables(self.values())
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::from_queryables(self.values())
     }
 }
 
-impl<'a, K, V> Queryable<'a> for BTreeMap<K, V>
+impl<'q, K, V> Queryable<'q> for BTreeMap<K, V>
 where
-    K: Queryable<'a> + Ord + Eq + 'a,
-    V: Queryable<'a>,
+    K: Queryable<'q> + Ord + Eq,
+    V: Queryable<'q>,
     K: TryFrom<Value>,
 {
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
     }
@@ -272,81 +272,81 @@ where
         "BTreeMap"
     }
 
-    fn all(&'a self) -> TreeIter<'a> {
-        TreeIter::from_queryables(self.values())
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::from_queryables(self.values())
     }
 }
 
-impl<'a, V> Queryable<'a> for BTreeSet<V>
+impl<'q, V> Queryable<'q> for BTreeSet<V>
 where
-    V: Queryable<'a> + Ord + Eq,
+    V: Queryable<'q> + Ord + Eq,
 {
     fn name(&self) -> &'static str {
         "BTreeSet"
     }
-    fn all(&'a self) -> TreeIter<'a> {
-        TreeIter::from_queryables(self)
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::from_queryables(self)
     }
 }
 
-impl<'a, V> Queryable<'a> for HashSet<V>
+impl<'q, V> Queryable<'q> for HashSet<V>
 where
-    V: Queryable<'a> + Hash + Eq,
+    V: Queryable<'q> + Hash + Eq,
 {
     fn name(&self) -> &'static str {
         "HashSet"
     }
-    fn all(&'a self) -> TreeIter<'a> {
-        TreeIter::from_queryables(self)
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::from_queryables(self)
     }
 }
 
-impl<'a, T> Queryable<'a> for Vec<T>
+impl<'q, T> Queryable<'q> for Vec<T>
 where
-    T: Queryable<'a>,
+    T: Queryable<'q>,
 {
     fn name(&self) -> &'static str {
         "Vec"
     }
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
     }
 
-    fn all(&'a self) -> TreeIter<'a> {
-        TreeIter::from_queryables(self)
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::from_queryables(self)
     }
 }
 
-impl<'a, T> Queryable<'a> for VecDeque<T>
+impl<'q, T> Queryable<'q> for VecDeque<T>
 where
-    T: Queryable<'a>,
+    T: Queryable<'q>,
 {
     fn name(&self) -> &'static str {
         "VecDeque"
     }
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
     }
 
-    fn all(&'a self) -> TreeIter<'a> {
-        TreeIter::from_queryables(self.iter())
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::from_queryables(self)
     }
 }
 
-impl<'a, T> Queryable<'a> for Box<T>
+impl<'q, T> Queryable<'q> for Box<T>
 where
-    T: Queryable<'a>,
+    T: Queryable<'q>,
 {
     fn name(&self) -> &'static str {
         self.as_ref().name()
     }
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         self.as_ref().member(field)
     }
 
-    fn all(&'a self) -> TreeIter<'a> {
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
         self.as_ref().all()
     }
 
@@ -355,22 +355,22 @@ where
     }
 }
 
-impl<'a, T> Queryable<'a> for Option<T>
+impl<'q, T> Queryable<'q> for Option<T>
 where
-    T: Queryable<'a>,
+    T: Queryable<'q>,
 {
     fn name(&self) -> &'static str {
         "Option"
     }
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         self.as_ref().and_then(|val| val.member(field))
     }
 
-    fn all(&'a self) -> TreeIter<'a> {
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
         if let Some(val) = self.as_ref() {
             val.all()
         } else {
-            TreeIter::empty()
+            NodeOrValueIter::empty()
         }
     }
 
@@ -379,22 +379,22 @@ where
     }
 }
 
-impl<'a, T, E> Queryable<'a> for Result<T, E>
+impl<'q, T, E> Queryable<'q> for Result<T, E>
 where
-    T: Queryable<'a>,
+    T: Queryable<'q>,
 {
     fn name(&self) -> &'static str {
         "Result"
     }
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         self.as_ref().ok().and_then(|val| val.member(field))
     }
 
-    fn all(&'a self) -> TreeIter<'a> {
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
         if let Ok(val) = self.as_ref() {
             val.all()
         } else {
-            TreeIter::empty()
+            NodeOrValueIter::empty()
         }
     }
 
@@ -403,7 +403,7 @@ where
     }
 }
 
-impl<'a> Queryable<'a> for std::time::Duration {
+impl<'q> Queryable<'q> for std::time::Duration {
     fn name(&self) -> &'static str {
         "Duration"
     }
@@ -412,18 +412,18 @@ impl<'a> Queryable<'a> for std::time::Duration {
     }
 }
 
-impl<'a, T> Queryable<'a> for std::cmp::Reverse<T>
+impl<'q, T> Queryable<'q> for std::cmp::Reverse<T>
 where
-    T: Queryable<'a>,
+    T: Queryable<'q>,
 {
     fn name(&self) -> &'static str {
         self.0.name()
     }
-    fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         self.0.member(field)
     }
 
-    fn all(&'a self) -> TreeIter<'a> {
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
         self.0.all()
     }
 
@@ -439,14 +439,14 @@ macro_rules! impl_tuples {
         impl_tuples!($($other_t),* => $($other_ind),*);
     };
     (@ $($t: ident),+ ($len: tt) => $($ind: tt),+) => {
-        impl<'a $(,$t)+> Queryable<'a> for ($($t,)+)
+        impl<'q $(,$t)+> Queryable<'q> for ($($t,)+)
         where
-            $($t: Queryable<'a>),+
+            $($t: Queryable<'q>),+
         {
             fn name (&self) -> &'static str {
                 stringify!(($($t,)+))
             }
-            fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+            fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
                 #[allow(clippy::collapsible_match)]
                 match field {
                     Value::Int(i) => {
@@ -461,8 +461,8 @@ macro_rules! impl_tuples {
                 }
             }
 
-            fn all(&'a self) -> TreeIter<'a> {
-                TreeIter(Box::from(vec![$(&self.$ind as _),+].into_iter()))
+            fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+                NodeOrValueIter::from_nodes(vec![$(&self.$ind as _),+])
             }
         }
 
@@ -470,20 +470,20 @@ macro_rules! impl_tuples {
         where
             $($t: TryFrom<Value>),+
         {
-            type Error = ValueConvertError;
-            fn try_from(value: Value) -> Result<Self, ValueConvertError> {
+            type Error = Error;
+            fn try_from(value: Value) -> Result<Self, Error> {
                 match value {
                     #[allow(unused_comparisons)]
                     Value::Array(arr) if arr.len() >= $len => {
                         let mut iter = arr.into_iter();
                         Ok((
                             $(
-                                $t::try_from(iter.next().ok_or(ValueConvertError)?)
-                                    .map_err(|_| ValueConvertError)?,
+                                $t::try_from(iter.next().ok_or(Error::TypeError)?)
+                                    .map_err(|_| Error::TypeError)?,
                             )+
                         ))
                     }
-                    _ => Err(ValueConvertError),
+                    _ => Err(Error::TypeError),
                 }
             }
         }
@@ -499,14 +499,14 @@ macro_rules! impl_arrays {
         impl_arrays!($($other_ind),*);
     };
     (@ $size: tt $(,$ind: tt)*) => {
-        impl<'a, T> Queryable<'a> for [T; $size]
+        impl<'q, T> Queryable<'q> for [T; $size]
         where
-            T: Queryable<'a>
+            T: Queryable<'q>
         {
             fn name(&self) -> &'static str {
                 stringify!([T; $size])
             }
-            fn member<'f>(&'a self, field: &'f Value) -> Option<&dyn Queryable<'a>> {
+            fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
                 #[allow(clippy::collapsible_match)]
                 match field {
                     Value::Int(i) => {
@@ -521,8 +521,8 @@ macro_rules! impl_arrays {
                 }
             }
 
-            fn all(&'a self) -> TreeIter<'a> {
-                TreeIter(Box::from(vec![$(&self[$ind] as _),*].into_iter()))
+            fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+                NodeOrValueIter::from_nodes(vec![$(&self[$ind] as _),*])
             }
         }
 
@@ -530,8 +530,8 @@ macro_rules! impl_arrays {
         where
             T: TryFrom<Value>,
         {
-            type Error = ValueConvertError;
-            fn try_from(value: Value) -> Result<Self, ValueConvertError> {
+            type Error = Error;
+            fn try_from(value: Value) -> Result<Self, Error> {
                 match value {
                     #[allow(unused_comparisons)]
                     Value::Array(arr) if arr.len() >= $size => {
@@ -540,13 +540,13 @@ macro_rules! impl_arrays {
                         Ok([
                             $(
                                 impl_arrays!(@foreach ($ind) =>
-                                    T::try_from(iter.next().ok_or(ValueConvertError)?)
-                                        .map_err(|_| ValueConvertError)?
+                                    T::try_from(iter.next().ok_or(Error::TypeError  )?)
+                                        .map_err(|_| Error::TypeError   )?
                                 )
                             ),*
                         ])
                     }
-                    _ => Err(ValueConvertError),
+                    _ => Err(Error::TypeError   ),
                 }
             }
         }

@@ -1,60 +1,103 @@
-use super::{Value, ValueIter};
+use clouseau_core::{Error, NodeOrValue, NodeOrValueIter, Value};
+use itertools::{process_results, Itertools as _};
 use std::collections::HashSet;
+use std::iter;
 
-pub fn count(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter::once(input.count())
+pub fn count<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    NodeOrValueIter::from_raw(iter::once(
+        process_results(input, |iter| iter.count())
+            .map(Value::from)
+            .map(NodeOrValue::from), // TODO add utility to collapse these intos
+    ))
 }
 
-pub fn sum(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter::once(
+pub fn sum<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    NodeOrValueIter::from_raw(iter::once(
+        process_results(
+            input
+                .map_ok(NodeOrValue::try_into_int)
+                .map(|v| v.and_then(|r| r)), // flatten?
+            |iter| iter.sum::<i64>(),
+        )
+        .map(Value::from)
+        .map(NodeOrValue::from), // TODO add utility to collapse these intos
+    ))
+}
+
+pub fn max<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    match process_results(
         input
-            .filter_map(|v| v.into_value())
-            .filter_map(Value::into_int)
-            .sum::<i64>(),
+            .map_ok(NodeOrValue::try_into_int)
+            .map(|v| v.and_then(|r| r)), // flatten?
+        |iter| iter.max(),
     )
+    .transpose()
+    .ok_or(Error::Empty("max()"))
+    {
+        Err(e) | Ok(Err(e)) => NodeOrValueIter::one(Err(e)),
+        Ok(Ok(max)) => NodeOrValueIter::one_value(Value::from(max)),
+    }
 }
 
-pub fn max(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter::from_values(
+pub fn min<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    match process_results(
         input
-            .filter_map(|v| v.into_value())
-            .filter_map(Value::into_int)
-            .max(),
+            .map_ok(NodeOrValue::try_into_int)
+            .map(|v| v.and_then(|r| r)), // flatten
+        |iter| iter.min(),
     )
+    .transpose()
+    .ok_or(Error::Empty("min()"))
+    {
+        Err(e) | Ok(Err(e)) => NodeOrValueIter::one(Err(e)),
+        Ok(Ok(min)) => NodeOrValueIter::one_value(Value::from(min)),
+    }
 }
 
-pub fn min(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter::from_values(
+pub fn first<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    match process_results(
         input
-            .filter_map(|v| v.into_value())
-            .filter_map(Value::into_int)
-            .min(),
+            .map_ok(NodeOrValue::try_into_int)
+            .map(|v| v.and_then(|r| r)), // flatten
+        |iter| iter.take(1).next(),
     )
+    .transpose()
+    .ok_or(Error::Empty("first()"))
+    {
+        Err(e) | Ok(Err(e)) => NodeOrValueIter::one(Err(e)),
+        Ok(Ok(min)) => NodeOrValueIter::one_value(Value::from(min)),
+    }
 }
 
-pub fn first(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter::from_nodes(input.take(1))
-}
-
-pub fn last(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter::from_nodes(
+pub fn last<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    match process_results(
         input
-            .fold(None, |mut last, val| {
+            .map_ok(NodeOrValue::try_into_int)
+            .map(|v| v.and_then(|r| r)), // flatten
+        |iter| {
+            iter.fold(None, |mut last, val| {
                 last.replace(val);
                 last
             })
-            .into_iter(),
+        },
     )
+    .transpose()
+    .ok_or(Error::Empty("last()"))
+    {
+        Err(e) | Ok(Err(e)) => NodeOrValueIter::one(Err(e)),
+        Ok(Ok(min)) => NodeOrValueIter::one_value(Value::from(min)),
+    }
 }
 
-pub fn distinct(input: ValueIter<'_>) -> ValueIter<'_> {
-    ValueIter::from_values(
-        input
-            .filter_map(|v| v.into_value())
-            .fold(HashSet::new(), |mut seen, v| {
-                seen.insert(v);
-                seen
-            })
-            .into_iter(),
-    )
+pub fn distinct<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    match input
+        .map_ok(NodeOrValue::try_into_value)
+        .map(|v| v.and_then(|r| r)) // flatten?
+        .fold_ok(HashSet::new(), |mut seen, v| {
+            seen.insert(v);
+            seen
+        }) {
+        Ok(values) => NodeOrValueIter::from_values(values.into_iter()),
+        Err(e) => NodeOrValueIter::from_raw(iter::once(Err(e))),
+    }
 }

@@ -1,11 +1,12 @@
 mod std_fns;
 
-use clouseau_core::{Queryable, TreeIter, Value, ValueIter};
+use clouseau_core::{Error, Node, NodeOrValue, NodeOrValueIter, Queryable, Result, Value};
+use itertools::process_results;
 use std::collections::HashMap;
 use std::fmt;
 use std::iter;
 
-type ValueFn = dyn Fn(ValueIter<'_>) -> ValueIter<'_>;
+type ValueFn = dyn for<'a, 'q> Fn(NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q>;
 
 pub struct Context {
     vars: HashMap<String, Value>,
@@ -35,7 +36,7 @@ impl Context {
 
     pub fn with_fun<F>(mut self, name: String, fun: F) -> Self
     where
-        F: Fn(ValueIter<'_>) -> ValueIter<'_> + 'static,
+        F: for<'a, 'q> Fn(NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> + 'static,
     {
         self.fns.insert(name, Box::new(fun) as _);
         self
@@ -44,19 +45,16 @@ impl Context {
     pub fn exec<'a>(
         &'a self,
         q: &'a Query,
-        data: &'a dyn Queryable<'a>,
+        root: &'a dyn Queryable<'a>,
     ) -> impl Iterator<Item = Box<dyn fmt::Display + 'a>> + 'a {
-        let ctx = ContextInner {
-            ctx: self,
-            root: data,
-        };
+        let ctx = ContextInner { ctx: self, root };
         q.exec(ctx)
     }
 }
 
 impl<'a> ContextInner<'a> {
-    fn var(&self, name: &str) -> Option<&Value> {
-        self.ctx.vars.get(name)
+    fn var(&self, name: &str) -> Option<Value> {
+        self.ctx.vars.get(name).cloned()
     }
 
     fn fun(&self, name: &str) -> Option<&ValueFn> {
@@ -66,7 +64,7 @@ impl<'a> ContextInner<'a> {
 
 #[derive(Clone, Copy)]
 pub struct ContextInner<'a> {
-    root: &'a dyn Queryable<'a>,
+    root: Node<'a, 'a>,
     ctx: &'a Context,
 }
 
@@ -77,12 +75,15 @@ pub struct Query {
 
 #[derive(Debug, Default)]
 pub struct Path {
-    segments: Vec<Segment>,
-    functions: Vec<Call>,
+    selectors: Vec<Selector>,
 }
 
 #[derive(Debug)]
-pub struct Call(String);
+pub enum Selector {
+    Segment(Segment),
+    Filter(Pred),
+    Call(Call),
+}
 
 #[derive(Debug)]
 pub struct Segment {
@@ -99,10 +100,12 @@ pub enum SegmentType {
 }
 
 #[derive(Debug)]
-pub enum OperatorRhs {
-    Path(Path),
-    Value(Value),
-    Var(String),
+pub struct Call(String);
+
+impl Call {
+    pub fn new(name: String) -> Self {
+        Call(name)
+    }
 }
 
 #[derive(Debug)]
@@ -111,6 +114,13 @@ pub struct Pred {
     path: Path,
     compare: Compare,
     rhs: OperatorRhs,
+}
+
+#[derive(Debug)]
+pub enum OperatorRhs {
+    Path(Path),
+    Value(Value),
+    Var(String),
 }
 
 #[derive(Debug)]
@@ -137,7 +147,221 @@ impl Query {
         &'a self,
         ctx: ContextInner<'a>,
     ) -> impl Iterator<Item = Box<dyn fmt::Display + 'a>> + 'a {
-        self.path.exec(ctx, ctx.root).map(|v| Box::new(v) as _)
+        self.path.exec(ctx, ctx.root).map(|res| match res {
+            Ok(node_or_value) => Box::new(node_or_value) as _,
+            Err(err) => Box::new(format!("Error: {}", err)) as _,
+        })
+    }
+}
+
+impl Path {
+    pub fn add_selector(&mut self, selector: Selector) {
+        self.selectors.push(selector);
+    }
+
+    pub fn exec<'a: 'q, 'q>(
+        &'a self,
+        ctx: ContextInner<'a>,
+        q: Node<'a, 'q>,
+    ) -> NodeOrValueIter<'a, 'q> {
+        let init = NodeOrValueIter::one_node(q);
+        NodeOrValueIter::from_raw(
+            self.selectors
+                .iter()
+                .fold(init, move |acc, selector| selector.exec(ctx, acc)),
+        )
+    }
+}
+
+impl Selector {
+    pub fn exec<'a: 'q, 'q>(
+        &'a self,
+        ctx: ContextInner<'a>,
+        values: NodeOrValueIter<'a, 'q>,
+    ) -> NodeOrValueIter<'a, 'q> {
+        match self {
+            Selector::Segment(segment) => {
+                NodeOrValueIter::from_raw(values.flat_map(move |node_or_val| match node_or_val {
+                    e @ Err(_) => NodeOrValueIter::from_raw(iter::once(e)),
+                    Ok(node_or_value) => segment.exec(ctx, node_or_value),
+                }))
+            }
+            Selector::Filter(pred) => {
+                NodeOrValueIter::from_raw(values.flat_map(move |node_or_val| match node_or_val {
+                    e @ Err(_) => NodeOrValueIter::from_raw(iter::once(e)),
+                    Ok(node_or_value) => pred.exec(ctx, node_or_value),
+                }))
+            }
+            Selector::Call(call) => call.exec(ctx, values),
+        }
+    }
+}
+
+impl Segment {
+    pub fn exec<'a: 'q, 'q>(
+        &'a self,
+        ctx: ContextInner<'a>,
+        node_or_value: NodeOrValue<'a, 'q>,
+    ) -> NodeOrValueIter<'a, 'q> {
+        if let NodeOrValue::Node(q) = node_or_value {
+            self.segment_type.exec(ctx, q)
+        } else {
+            NodeOrValueIter::from_raw(iter::once(Err(Error::ExpectedNode)))
+        }
+    }
+}
+
+impl Call {
+    pub fn exec<'a: 'q, 'q>(
+        &'a self,
+        ctx: ContextInner<'a>,
+        values: NodeOrValueIter<'a, 'q>,
+    ) -> NodeOrValueIter<'a, 'q> {
+        if let Some(f) = ctx.fun(&self.0) {
+            f(values)
+        } else {
+            NodeOrValueIter::one(Err(Error::VarNotFound))
+        }
+    }
+}
+
+impl Pred {
+    pub fn new(path: Path, compare: Compare, rhs: OperatorRhs, match_type: MatchType) -> Pred {
+        Self {
+            path,
+            compare,
+            rhs,
+            match_type,
+        }
+    }
+
+    fn exec<'a: 'q, 'q>(
+        &'a self,
+        ctx: ContextInner<'a>,
+        node_or_value: NodeOrValue<'a, 'q>,
+    ) -> NodeOrValueIter<'a, 'q> {
+        match node_or_value {
+            NodeOrValue::Node(node) => match self.filter(ctx, node) {
+                Ok(true) => NodeOrValueIter::one_node(node),
+                Ok(false) => NodeOrValueIter::empty(),
+                Err(err) => NodeOrValueIter::one(Err(err)),
+            },
+            NodeOrValue::Value(_) => NodeOrValueIter::one(Err(Error::ExpectedNode)),
+        }
+    }
+
+    fn filter<'a: 'q, 'q>(&'a self, ctx: ContextInner<'a>, node: Node<'a, 'q>) -> Result<bool> {
+        let mut lhs = self
+            .path
+            .exec(ctx, node)
+            .map(|n| n.and_then(|n| n.try_into_value()))
+            .peekable();
+        Ok(match self.match_type {
+            MatchType::Any => match &self.rhs {
+                OperatorRhs::Path(path) => {
+                    lhs.peek().is_some()
+                        && process_results(lhs, |mut iter| {
+                            // iter.any(), but with results in the predicate
+                            iter.try_fold(false, |acc, v| {
+                                if acc {
+                                    // short-circuit most of the calculation if we already found one
+                                    return Ok(true);
+                                }
+                                let mut rhs = path
+                                    .exec(ctx, node)
+                                    .map(|n| n.and_then(|n| n.try_into_value()))
+                                    .peekable();
+                                if rhs.peek().is_none() {
+                                    Ok(acc)
+                                } else {
+                                    for r in rhs {
+                                        if self.compare.compare(&v, &r?) {
+                                            return Ok(true);
+                                        }
+                                    }
+                                    Ok(acc)
+                                }
+                            })
+                        })??
+                }
+                OperatorRhs::Value(value) => {
+                    lhs.peek().is_some()
+                        && process_results(lhs, |mut iter| {
+                            iter.any(|v| self.compare.compare(&v, value))
+                        })?
+                }
+                OperatorRhs::Var(ident) => {
+                    if let Some(value) = ctx.var(&ident) {
+                        lhs.peek().is_some()
+                            && process_results(lhs, |mut iter| {
+                                iter.any(|v| self.compare.compare(&v, &value))
+                            })?
+                    } else {
+                        false
+                    }
+                }
+            },
+            MatchType::All => match &self.rhs {
+                OperatorRhs::Path(path) => {
+                    lhs.peek().is_some()
+                        && process_results(lhs, |mut iter| {
+                            iter.try_fold(true, |acc, v| {
+                                if !acc {
+                                    return Ok(false);
+                                }
+                                let mut rhs = path
+                                    .exec(ctx, node)
+                                    .map(|n| n.and_then(|n| n.try_into_value()))
+                                    .peekable();
+                                if rhs.peek().is_none() {
+                                    Ok(false)
+                                } else {
+                                    for r in rhs {
+                                        if !self.compare.compare(&v, &r?) {
+                                            return Ok(false);
+                                        }
+                                    }
+                                    Ok(true)
+                                }
+                            })
+                        })??
+                }
+                OperatorRhs::Value(value) => {
+                    lhs.peek().is_some()
+                        && process_results(lhs, |mut iter| {
+                            iter.any(|v| self.compare.compare(&v, value))
+                        })?
+                }
+                OperatorRhs::Var(ident) => {
+                    if let Some(value) = ctx.var(&ident) {
+                        lhs.peek().is_some()
+                            && process_results(lhs, |mut iter| {
+                                iter.any(|v| self.compare.compare(&v, &value))
+                            })?
+                    } else {
+                        false
+                    }
+                }
+            },
+        })
+    }
+}
+
+impl OperatorRhs {
+    pub fn exec<'a: 'q, 'q>(
+        &'a self,
+        ctx: ContextInner<'a>,
+        q: Node<'a, 'q>,
+    ) -> NodeOrValueIter<'a, 'q> {
+        match self {
+            OperatorRhs::Value(value) => NodeOrValueIter::one_value(value.clone()),
+            OperatorRhs::Path(path) => path.exec(ctx, q),
+            OperatorRhs::Var(name) => NodeOrValueIter::one(
+                ctx.var(name)
+                    .map(NodeOrValue::from)
+                    .ok_or(Error::VarNotFound),
+            ),
+        }
     }
 }
 
@@ -163,128 +387,23 @@ impl Compare {
     }
 }
 
-impl Path {
-    pub fn append_segment(mut self, segment: Segment) -> Self {
-        self.segments.push(segment);
-        self
-    }
-
-    pub fn append_filter(mut self, filter: Pred) -> Self {
-        if let Some(segment) = self.segments.last_mut() {
-            segment.filter = Some(filter);
-        }
-        self
-    }
-
-    pub fn append_function_call(mut self, name: String) -> Self {
-        self.functions.push(Call(name));
-        self
-    }
-
-    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> ValueIter<'a> {
-        let init = TreeIter(Box::new(iter::once(q as _)));
-        let path_result = ValueIter::from_values(
-            self.segments.iter().fold(init, move |i, segment| {
-                TreeIter(Box::from(i.flat_map(move |qq| segment.exec(ctx, qq))))
-            }), // .flat_map(|qq| qq.data().into_iter()),
-        );
-        self.functions
-            .iter()
-            .fold(path_result, |acc, f| f.exec(ctx, acc))
-    }
-}
-
-impl Segment {
-    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> TreeIter<'a> {
-        if let Some(pred) = &self.filter {
-            TreeIter(Box::from(
-                self.segment_type
-                    .exec(ctx, q)
-                    .filter(move |&v| pred.filter(ctx, v)),
-            ))
-        } else {
-            self.segment_type.exec(ctx, q)
-        }
-    }
-}
-
-impl Call {
-    pub fn exec<'a>(&self, ctx: ContextInner<'a>, values: ValueIter<'a>) -> ValueIter<'a> {
-        if let Some(f) = ctx.fun(&self.0) {
-            f(values)
-        } else {
-            ValueIter::once(format!("** Function `{}` not found **", &self.0))
-        }
-    }
-}
-
-impl Pred {
-    pub fn new(path: Path, compare: Compare, rhs: OperatorRhs, match_type: MatchType) -> Pred {
-        Self {
-            path,
-            compare,
-            rhs,
-            match_type,
-        }
-    }
-    pub fn filter<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> bool {
-        let mut values = self
-            .path
-            .exec(ctx, q)
-            .filter_map(|v| v.into_value())
-            .peekable();
-        match self.match_type {
-            MatchType::Any => match &self.rhs {
-                OperatorRhs::Path(path) => {
-                    values.peek().is_some()
-                        && values.any(|v| {
-                            let mut rhs =
-                                path.exec(ctx, q).filter_map(|v| v.into_value()).peekable();
-                            rhs.peek().is_some() && rhs.any(|r| self.compare.compare(&v, &r))
-                        })
-                }
-                OperatorRhs::Value(value) => {
-                    values.peek().is_some() && values.any(|v| self.compare.compare(&v, value))
-                }
-                OperatorRhs::Var(ident) => {
-                    if let Some(value) = ctx.var(&ident) {
-                        values.peek().is_some() && values.any(|v| self.compare.compare(&v, value))
-                    } else {
-                        false
-                    }
-                }
-            },
-            MatchType::All => match &self.rhs {
-                OperatorRhs::Path(path) => {
-                    values.peek().is_some()
-                        && values.any(|v| {
-                            let mut rhs =
-                                path.exec(ctx, q).filter_map(|v| v.into_value()).peekable();
-                            rhs.peek().is_some() && rhs.all(|r| self.compare.compare(&v, &r))
-                        })
-                }
-                OperatorRhs::Value(value) => {
-                    values.peek().is_some() && values.all(|v| self.compare.compare(&v, value))
-                }
-                OperatorRhs::Var(ident) => {
-                    if let Some(value) = ctx.var(&ident) {
-                        values.peek().is_some() && values.all(|v| self.compare.compare(&v, value))
-                    } else {
-                        false
-                    }
-                }
-            },
-        }
-    }
-}
-
 impl SegmentType {
-    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: &'a dyn Queryable<'a>) -> TreeIter<'a> {
+    pub fn exec<'a: 'q, 'q>(
+        &'a self,
+        ctx: ContextInner<'a>,
+        q: Node<'a, 'q>,
+    ) -> NodeOrValueIter<'a, 'q> {
         match self {
-            SegmentType::Child(s) => TreeIter(Box::from(q.member(&s).into_iter())),
+            SegmentType::Child(s) => {
+                if let Some(q) = q.member(&s) {
+                    NodeOrValueIter::one_node(q)
+                } else {
+                    NodeOrValueIter::empty()
+                }
+            }
             SegmentType::Children => q.all(),
-            SegmentType::Current => TreeIter(Box::from(iter::once(q))),
-            SegmentType::Root => TreeIter(Box::from(iter::once(ctx.root))),
+            SegmentType::Current => NodeOrValueIter::one_node(q),
+            SegmentType::Root => NodeOrValueIter::one_node(ctx.root),
         }
     }
 
