@@ -210,6 +210,9 @@ impl<'a, 'q> Iterator for NodeOrValueIter<'a, 'q> {
 }
 
 pub trait Queryable<'q> {
+    fn keys(&self) -> ValueIter<'_> {
+        ValueIter::empty()
+    }
     fn member<'a, 'f>(&'a self, _: &'f Value) -> Option<Node<'a, 'q>> {
         None
     }

@@ -9,6 +9,9 @@ struct Foo {
 }
 
 impl<'q> Queryable<'q> for Foo {
+    fn keys(&self) -> ValueIter<'_> {
+        ValueIter::from_values(vec!["a", "b", "v"].into_iter())
+    }
     fn name(&self) -> &'static str {
         "Foo"
     }

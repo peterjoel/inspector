@@ -17,16 +17,18 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
     let a_life = &Lifetime::new("'__clouseau_a", Span::call_site());
     let (impl_generics, type_generics, where_clause) =
         create_generics(q_life.clone(), &input.generics);
-    let (member_body, all_body, data_body) = match &input.data {
+    let (member_body, all_body, data_body, keys_body) = match &input.data {
         Data::Struct(data) => (
             struct_member_body(data),
             struct_all_body(data),
             struct_data_body(data),
+            struct_keys_body(data),
         ),
         Data::Enum(data) => (
             enum_member_body(data),
             enum_all_body(data),
             enum_data_body(data),
+            enum_keys_body(data),
         ),
         Data::Union(_) => return quote! { compile_error!("Unions are not supported"); },
     };
@@ -34,6 +36,9 @@ fn impl_queryable(input: DeriveInput) -> TokenStream {
         impl#impl_generics ::clouseau::core::Queryable<#q_life> for #name#type_generics #where_clause {
             fn name(&self) -> &'static str {
                 stringify!(#name)
+            }
+            fn keys(&self) -> clouseau::core::ValueIter<'_> {
+                #keys_body
             }
             fn member<#a_life, 'f>(&#a_life self, field_name: &'f ::clouseau::core::Value) ->
                 Option<::clouseau::core::Node<#a_life, #q_life>>
@@ -152,6 +157,26 @@ fn struct_all_body(data: &DataStruct) -> TokenStream {
     }
 }
 
+fn struct_keys_body(data: &DataStruct) -> TokenStream {
+    match &data.fields {
+        Fields::Unnamed(fields) => {
+            let len = fields.unnamed.len();
+            quote! {
+                ::clouseau::core::ValueIter::from_values(0..#len)
+            }
+        }
+        Fields::Named(fields) => {
+            let names = fields.named.iter().filter_map(|named| named.ident.as_ref());
+            quote! {
+                ::clouseau::core::ValueIter::from_values(vec![#(stringify!(#names)),*])
+            }
+        }
+        Fields::Unit => quote! {
+            ::clouseau::core::ValueIter::empty()
+        },
+    }
+}
+
 fn struct_data_body(data: &DataStruct) -> TokenStream {
     match &data.fields {
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
@@ -207,6 +232,36 @@ fn enum_member_body(data: &DataEnum) -> TokenStream {
             Fields::Unit => {
                 quote! {
                     Self::#name => None
+                }
+            }
+        }
+    });
+    quote! {
+        match self {
+            #(#variants,)*
+        }
+    }
+}
+
+fn enum_keys_body(data: &DataEnum) -> TokenStream {
+    let variants = data.variants.iter().map(|variant| {
+        let name = &variant.ident;
+        match &variant.fields {
+            Fields::Unnamed(fields) => {
+                let len = fields.unnamed.len();
+                quote! {
+                    Self::#name(..) => ::clouseau::core::ValueIter::from_values(0..#len)
+                }
+            }
+            Fields::Named(fields) => {
+                let names = fields.named.iter().map(|field| field.ident.as_ref().unwrap().to_string());
+                quote! {
+                    Self::#name { .. } => ::clouseau::core::ValueIter::from_values(vec![#(#names),*])
+                }
+            }
+            Fields::Unit => {
+                quote! {
+                    Self::#name => ::clouseau::core::ValueIter::empty()
                 }
             }
         }

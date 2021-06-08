@@ -1,4 +1,4 @@
-use super::{NodeOrValueIter, Queryable, Value};
+use super::{NodeOrValueIter, Queryable, Value, ValueIter};
 use arrayvec::{Array, ArrayVec};
 use std::convert::TryFrom;
 
@@ -9,6 +9,9 @@ where
 {
     fn name(&self) -> &'static str {
         "ArrayVec"
+    }
+    fn keys(&self) -> ValueIter<'_> {
+        ValueIter::from_values(0..self.len())
     }
     fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let index = usize::try_from(field).ok()?;

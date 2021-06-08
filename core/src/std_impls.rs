@@ -1,9 +1,10 @@
-use crate::{Error, NodeOrValueIter, Queryable, Value};
+use crate::{Array, Error, NodeOrValueIter, Queryable, Value, ValueIter};
 use std::borrow::Cow;
 use std::collections::*;
 use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 macro_rules! value_int {
     ($($ty: ty $( => $via: ty)?),* $(,)?) => {
@@ -241,14 +242,15 @@ into_queryable!(String);
 
 impl<'q, K, V> Queryable<'q> for HashMap<K, V>
 where
-    // TODO get rid of the Clone constraint
-    K: Queryable<'q> + Hash + Eq + Clone,
+    K: Queryable<'q> + TryFrom<Value> + Into<Value> + Hash + Eq + Clone,
     V: Queryable<'q>,
-    K: TryFrom<Value>,
 {
     fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
+    }
+    fn keys(&self) -> ValueIter<'_> {
+        ValueIter::from_values(self.keys().cloned().map(Into::into))
     }
     fn name(&self) -> &'static str {
         "HashMap"
@@ -260,13 +262,15 @@ where
 
 impl<'q, K, V> Queryable<'q> for BTreeMap<K, V>
 where
-    K: Queryable<'q> + Ord + Eq,
+    K: Queryable<'q> + TryFrom<Value> + Into<Value> + Clone + Ord + Eq,
     V: Queryable<'q>,
-    K: TryFrom<Value>,
 {
     fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
+    }
+    fn keys(&self) -> ValueIter<'_> {
+        ValueIter::from_values(self.keys().cloned().map(Into::into))
     }
     fn name(&self) -> &'static str {
         "BTreeMap"
@@ -308,6 +312,9 @@ where
     fn name(&self) -> &'static str {
         "Vec"
     }
+    fn keys(&self) -> ValueIter<'_> {
+        ValueIter::from_values(0..self.len())
+    }
     fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
@@ -325,6 +332,9 @@ where
     fn name(&self) -> &'static str {
         "VecDeque"
     }
+    fn keys(&self) -> ValueIter<'_> {
+        ValueIter::from_values(0..self.len())
+    }
     fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
@@ -341,6 +351,9 @@ where
 {
     fn name(&self) -> &'static str {
         self.as_ref().name()
+    }
+    fn keys(&self) -> ValueIter<'_> {
+        self.as_ref().keys()
     }
     fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         self.as_ref().member(field)
@@ -361,6 +374,13 @@ where
 {
     fn name(&self) -> &'static str {
         "Option"
+    }
+    fn keys(&self) -> ValueIter<'_> {
+        if let Some(v) = self {
+            v.keys()
+        } else {
+            ValueIter::empty()
+        }
     }
     fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         self.as_ref().and_then(|val| val.member(field))
@@ -385,6 +405,13 @@ where
 {
     fn name(&self) -> &'static str {
         "Result"
+    }
+    fn keys(&self) -> ValueIter<'_> {
+        if let Ok(v) = self {
+            v.keys()
+        } else {
+            ValueIter::empty()
+        }
     }
     fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
         self.as_ref().ok().and_then(|val| val.member(field))
@@ -416,6 +443,9 @@ impl<'q, T> Queryable<'q> for std::cmp::Reverse<T>
 where
     T: Queryable<'q>,
 {
+    fn keys(&self) -> ValueIter<'_> {
+        self.0.keys()
+    }
     fn name(&self) -> &'static str {
         self.0.name()
     }
@@ -443,7 +473,10 @@ macro_rules! impl_tuples {
         where
             $($t: Queryable<'q>),+
         {
-            fn name (&self) -> &'static str {
+            fn keys(&self) -> ValueIter<'_> {
+                ValueIter::from_values(0..$len)
+            }
+            fn name(&self) -> &'static str {
                 stringify!(($($t,)+))
             }
             fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
@@ -487,6 +520,18 @@ macro_rules! impl_tuples {
                 }
             }
         }
+
+        impl<$($t),+> From<($($t,)+)> for Value
+        where
+            $($t: Into<Value>),+
+        {
+            fn from(v: ($($t,)+)) -> Self {
+                let mut values = vec![$((v.$ind.into()),)+];
+                // TODO: something more efficient than this
+                values.reverse();
+                Value::Array(Array(Rc::from(values)))
+            }
+        }
     };
 }
 
@@ -503,6 +548,9 @@ macro_rules! impl_arrays {
         where
             T: Queryable<'q>
         {
+            fn keys(&self) -> ValueIter<'_> {
+                ValueIter::from_values(0..$size)
+            }
             fn name(&self) -> &'static str {
                 stringify!([T; $size])
             }
