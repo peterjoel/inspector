@@ -99,10 +99,8 @@ fn select_all_from_map() {
     let t = hash_map! { 7: 3, 8: 4, 9: 5 };
     let ctx = Context::default();
     let q = parse_query("./*").unwrap();
-    let mut result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
-    result.sort();
-    let expected: Vec<String> = vec_from!["3", "4", "5"];
-    assert_eq!(result, expected);
+    let result: HashSet<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    assert_eq!(result, hash_set_from!["3", "4", "5"]);
 }
 
 #[test]
@@ -294,5 +292,63 @@ fn function_count() {
     let q = parse_query(r#"/a/*.count()"#).unwrap();
     let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
     let expected: Vec<String> = vec_from!["5"];
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn function_keys() {
+    #[derive(Queryable)]
+    struct Data {
+        a: Vec<i32>,
+        b: HashMap<i32, i32>,
+    }
+    let d = Data {
+        a: vec![10, 11, 12, 13, 14],
+        b: hash_map![12: 100, 14: 200, 16: 300, 18: 400],
+    };
+
+    let ctx = Context::default();
+    // ugh, need to fix that syntax
+    let q = parse_query(r#"..keys()"#).unwrap();
+    let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["a", "b"];
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn function_keys_are_filterable() {
+    #[derive(Queryable)]
+    struct Data {
+        a: Vec<i32>,
+        b: HashMap<i32, i32>,
+    }
+    let d = Data {
+        a: vec![10, 11, 12, 13, 14],
+        b: hash_map![12: 100, 14: 200, 16: 300, 18: 400],
+    };
+
+    let ctx = Context::default();
+    let q = parse_query(r#"/b.keys()[. > 14]"#).unwrap();
+    let result: HashSet<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: HashSet<String> = hash_set_from!["16", "18"];
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn non_dot_paths_cannot_be_executed_on_values_in_predicates() {
+    #[derive(Queryable)]
+    struct Data {
+        a: Vec<i32>,
+        b: HashMap<i32, i32>,
+    }
+    let d = Data {
+        a: vec![10, 11, 12, 13, 14],
+        b: hash_map![12: 100, 14: 200, 16: 300, 18: 400],
+    };
+
+    let ctx = Context::default();
+    let q = parse_query(r#"/b.keys()[./path > 14]"#).unwrap();
+    let result: HashSet<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
+    let expected: HashSet<String> = hash_set_from!["Error: Cannot execute a path on a value"];
     assert_eq!(result, expected);
 }

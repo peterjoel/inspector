@@ -23,6 +23,7 @@ impl Default for Context {
         fns.insert(String::from("distinct"), Box::new(std_fns::distinct));
         fns.insert(String::from("first"), Box::new(std_fns::first));
         fns.insert(String::from("last"), Box::new(std_fns::last));
+        fns.insert(String::from("keys"), Box::new(std_fns::keys));
         let vars = HashMap::new();
         Context { fns, vars }
     }
@@ -147,7 +148,7 @@ impl Query {
         &'a self,
         ctx: ContextInner<'a>,
     ) -> impl Iterator<Item = Box<dyn fmt::Display + 'a>> + 'a {
-        self.path.exec(ctx, ctx.root).map(|res| match res {
+        self.path.exec(ctx, Some(ctx.root)).map(|res| match res {
             Ok(node_or_value) => Box::new(node_or_value) as _,
             Err(err) => Box::new(format!("Error: {}", err)) as _,
         })
@@ -162,14 +163,47 @@ impl Path {
     pub fn exec<'a: 'q, 'q>(
         &'a self,
         ctx: ContextInner<'a>,
-        q: Node<'a, 'q>,
+        q: Option<Node<'a, 'q>>,
     ) -> NodeOrValueIter<'a, 'q> {
-        let init = NodeOrValueIter::one_node(q);
-        NodeOrValueIter::from_raw(
-            self.selectors
-                .iter()
-                .fold(init, move |acc, selector| selector.exec(ctx, acc)),
+        if let Some(init) = q
+            .or_else(|| {
+                if self.is_from_root() {
+                    Some(ctx.root)
+                } else {
+                    None
+                }
+            })
+            .map(NodeOrValueIter::one_node)
+        {
+            NodeOrValueIter::from_raw(
+                self.selectors
+                    .iter()
+                    .fold(init, move |acc, selector| selector.exec(ctx, acc)),
+            )
+        } else {
+            NodeOrValueIter::empty()
+        }
+    }
+
+    fn is_from_root(&self) -> bool {
+        matches!(
+            self.selectors.first(),
+            Some(Selector::Segment(Segment {
+                segment_type: SegmentType::Root,
+                ..
+            }))
         )
+    }
+
+    fn is_dot(&self) -> bool {
+        self.selectors.len() == 1
+            && matches!(
+                self.selectors[0],
+                Selector::Segment(Segment {
+                    segment_type: SegmentType::Current,
+                    ..
+                })
+            )
     }
 }
 
@@ -241,108 +275,79 @@ impl Pred {
         node_or_value: NodeOrValue<'a, 'q>,
     ) -> NodeOrValueIter<'a, 'q> {
         match node_or_value {
-            NodeOrValue::Node(node) => match self.filter(ctx, node) {
+            NodeOrValue::Node(node) => match self.pred(
+                ctx,
+                self.path
+                    .exec(ctx, Some(node))
+                    .map(|n| n.and_then(|n| n.try_into_value())),
+                Some(node),
+            ) {
                 Ok(true) => NodeOrValueIter::one_node(node),
                 Ok(false) => NodeOrValueIter::empty(),
                 Err(err) => NodeOrValueIter::one(Err(err)),
             },
-            NodeOrValue::Value(_) => NodeOrValueIter::one(Err(Error::ExpectedNode)),
+            NodeOrValue::Value(value) => {
+                if self.path.is_dot() {
+                    match self.pred(ctx, iter::once(Ok(value.clone())), None) {
+                        Ok(true) => NodeOrValueIter::one_value(value),
+                        Ok(false) => NodeOrValueIter::empty(),
+                        Err(err) => NodeOrValueIter::one(Err(err)),
+                    }
+                } else {
+                    NodeOrValueIter::one(Err(Error::PathOnValue))
+                }
+            }
         }
     }
 
-    fn filter<'a: 'q, 'q>(&'a self, ctx: ContextInner<'a>, node: Node<'a, 'q>) -> Result<bool> {
-        let mut lhs = self
-            .path
-            .exec(ctx, node)
-            .map(|n| n.and_then(|n| n.try_into_value()))
-            .peekable();
-        Ok(match self.match_type {
-            MatchType::Any => match &self.rhs {
-                OperatorRhs::Path(path) => {
-                    lhs.peek().is_some()
-                        && process_results(lhs, |mut iter| {
-                            // iter.any(), but with results in the predicate
-                            iter.try_fold(false, |acc, v| {
-                                if acc {
-                                    // short-circuit most of the calculation if we already found one
-                                    return Ok(true);
+    fn pred<'a: 'q, 'q>(
+        &'a self,
+        ctx: ContextInner<'a>,
+        lhs: impl Iterator<Item = Result<Value>> + 'a,
+        node: Option<Node<'a, 'q>>,
+    ) -> Result<bool> {
+        Ok(match &self.rhs {
+            OperatorRhs::Path(path) => {
+                process_results(lhs, |mut iter| {
+                    // iter.any() or iter.all(), but with results in the predicate
+                    let is_all = match self.match_type {
+                        MatchType::All => true,
+                        MatchType::Any => false,
+                    };
+                    iter.try_fold(is_all, |acc, v| {
+                        if acc != is_all {
+                            // short-circuit most of the calculation
+                            return Ok(!is_all);
+                        }
+                        let mut rhs = path
+                            .exec(ctx, node)
+                            .map(|n| n.and_then(|n| n.try_into_value()))
+                            .peekable();
+                        if rhs.peek().is_none() {
+                            Err(Error::Empty("[Predicate]"))
+                        } else {
+                            for r in rhs {
+                                if is_all != self.compare.compare_values(&v, &r?) {
+                                    return Ok(!is_all);
                                 }
-                                let mut rhs = path
-                                    .exec(ctx, node)
-                                    .map(|n| n.and_then(|n| n.try_into_value()))
-                                    .peekable();
-                                if rhs.peek().is_none() {
-                                    Ok(acc)
-                                } else {
-                                    for r in rhs {
-                                        if self.compare.compare(&v, &r?) {
-                                            return Ok(true);
-                                        }
-                                    }
-                                    Ok(acc)
-                                }
-                            })
-                        })??
+                            }
+                            Ok(acc)
+                        }
+                    })
+                })??
+            }
+            OperatorRhs::Value(value) => process_results(lhs, |mut iter| {
+                iter.any(|v| self.compare.compare_values(&v, value))
+            })?,
+            OperatorRhs::Var(ident) => {
+                if let Some(value) = ctx.var(&ident) {
+                    process_results(lhs, |mut iter| {
+                        iter.any(|v| self.compare.compare_values(&v, &value))
+                    })?
+                } else {
+                    return Err(Error::VarNotFound);
                 }
-                OperatorRhs::Value(value) => {
-                    lhs.peek().is_some()
-                        && process_results(lhs, |mut iter| {
-                            iter.any(|v| self.compare.compare(&v, value))
-                        })?
-                }
-                OperatorRhs::Var(ident) => {
-                    if let Some(value) = ctx.var(&ident) {
-                        lhs.peek().is_some()
-                            && process_results(lhs, |mut iter| {
-                                iter.any(|v| self.compare.compare(&v, &value))
-                            })?
-                    } else {
-                        false
-                    }
-                }
-            },
-            MatchType::All => match &self.rhs {
-                OperatorRhs::Path(path) => {
-                    lhs.peek().is_some()
-                        && process_results(lhs, |mut iter| {
-                            iter.try_fold(true, |acc, v| {
-                                if !acc {
-                                    return Ok(false);
-                                }
-                                let mut rhs = path
-                                    .exec(ctx, node)
-                                    .map(|n| n.and_then(|n| n.try_into_value()))
-                                    .peekable();
-                                if rhs.peek().is_none() {
-                                    Ok(false)
-                                } else {
-                                    for r in rhs {
-                                        if !self.compare.compare(&v, &r?) {
-                                            return Ok(false);
-                                        }
-                                    }
-                                    Ok(true)
-                                }
-                            })
-                        })??
-                }
-                OperatorRhs::Value(value) => {
-                    lhs.peek().is_some()
-                        && process_results(lhs, |mut iter| {
-                            iter.any(|v| self.compare.compare(&v, value))
-                        })?
-                }
-                OperatorRhs::Var(ident) => {
-                    if let Some(value) = ctx.var(&ident) {
-                        lhs.peek().is_some()
-                            && process_results(lhs, |mut iter| {
-                                iter.any(|v| self.compare.compare(&v, &value))
-                            })?
-                    } else {
-                        false
-                    }
-                }
-            },
+            }
         })
     }
 }
@@ -355,7 +360,7 @@ impl OperatorRhs {
     ) -> NodeOrValueIter<'a, 'q> {
         match self {
             OperatorRhs::Value(value) => NodeOrValueIter::one_value(value.clone()),
-            OperatorRhs::Path(path) => path.exec(ctx, q),
+            OperatorRhs::Path(path) => path.exec(ctx, Some(q)),
             OperatorRhs::Var(name) => NodeOrValueIter::one(
                 ctx.var(name)
                     .map(NodeOrValue::from)
@@ -366,7 +371,7 @@ impl OperatorRhs {
 }
 
 impl Compare {
-    fn compare(&self, a: &Value, b: &Value) -> bool {
+    fn compare_values(&self, a: &Value, b: &Value) -> bool {
         match (a, b) {
             (Value::String(a), Value::String(b)) => match self {
                 Compare::LessThan => a < b,

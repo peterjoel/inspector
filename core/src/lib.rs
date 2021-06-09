@@ -24,6 +24,8 @@ pub enum Error {
     ExpectedInt,
     #[error("Variable not found")]
     VarNotFound,
+    #[error("Cannot execute a path on a value")]
+    PathOnValue,
     #[error("Input is empty in {0}")]
     Empty(&'static str),
 }

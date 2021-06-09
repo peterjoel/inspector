@@ -91,3 +91,11 @@ pub fn distinct<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, '
         Err(e) => NodeOrValueIter::from_raw(iter::once(Err(e))),
     }
 }
+
+pub fn keys<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    NodeOrValueIter::from_raw(input.flat_map(|node| match node {
+        Ok(NodeOrValue::Node(node)) => NodeOrValueIter::from_values(node.keys()),
+        Ok(NodeOrValue::Value(_)) => NodeOrValueIter::from_nodes(Err(Error::ExpectedNode)),
+        Err(e) => NodeOrValueIter::from_nodes(Err(e)),
+    }))
+}

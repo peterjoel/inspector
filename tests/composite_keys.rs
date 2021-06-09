@@ -2,7 +2,7 @@ use clouseau::query::Context;
 use clouseau::*;
 use std::collections::*;
 use std::string::ToString;
-use velcro::{vec, *};
+use velcro::*;
 
 #[test]
 fn map_with_composite_keys() {
@@ -14,7 +14,6 @@ fn map_with_composite_keys() {
     };
     let ctx = Context::default();
     let q = parse_query(r#" ./key:{8, "def", 4} "#).unwrap();
-    let mut result: Vec<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
-    result.sort();
-    assert_eq!(result, vec![String::from("4")]);
+    let result: HashSet<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
+    assert_eq!(result, hash_set_from!["4"]);
 }
