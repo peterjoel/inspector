@@ -22,6 +22,12 @@ impl TryFrom<Value> for Uuid {
     }
 }
 
+impl From<Uuid> for Value {
+    fn from(uuid: Uuid) -> Value {
+        Value::String(uuid.to_string())
+    }
+}
+
 #[test]
 fn test_uuid() {
     use super::*;
