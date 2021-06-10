@@ -1,5 +1,6 @@
 use crate::{Array, Error, NodeOrValueIter, Queryable, Value, ValueIter};
 use std::borrow::Cow;
+use std::cell::{Cell, RefCell};
 use std::collections::*;
 use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
@@ -380,6 +381,56 @@ where
     }
 }
 
+impl<T> From<Box<T>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(b: Box<T>) -> Value {
+        (*b).into()
+    }
+}
+
+// This impl is a bit limited because Cell requires that you copy its contents which
+// won't work with Clouseau Queryable lifetimes
+impl<'q, T: Into<Value> + Copy> Queryable<'q> for Cell<T> {
+    fn name(&self) -> &'static str {
+        "Cell"
+    }
+    fn data(&self) -> Option<Value> {
+        Some(self.get().into())
+    }
+}
+
+impl<T> From<Cell<T>> for Value
+where
+    Value: From<T>,
+    T: Copy,
+{
+    fn from(cell: Cell<T>) -> Value {
+        Value::from(cell.get())
+    }
+}
+
+// This impl is a bit limited because RefCell contents are accessed via a Ref, and data
+// borrowed from the Ref cannot outlive the scope of the method
+impl<'q, T: Queryable<'q>> Queryable<'q> for RefCell<T> {
+    fn name(&self) -> &'static str {
+        self.borrow().name()
+    }
+    fn data(&self) -> Option<Value> {
+        self.borrow().data()
+    }
+}
+
+impl<T> From<RefCell<T>> for Value
+where
+    T: Into<Value> + Clone,
+{
+    fn from(cell: RefCell<T>) -> Value {
+        cell.borrow().clone().into()
+    }
+}
+
 impl<'q, T> Queryable<'q> for Option<T>
 where
     T: Queryable<'q>,
@@ -471,6 +522,25 @@ where
 
     fn data(&self) -> Option<Value> {
         self.0.data()
+    }
+}
+
+impl<T> From<std::cmp::Reverse<T>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(rev: std::cmp::Reverse<T>) -> Value {
+        rev.0.into()
+    }
+}
+
+impl<T> TryFrom<Value> for std::cmp::Reverse<T>
+where
+    T: TryFrom<Value>,
+{
+    type Error = <T as TryFrom<Value>>::Error;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        Ok(std::cmp::Reverse(T::try_from(value)?))
     }
 }
 
