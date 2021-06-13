@@ -346,15 +346,17 @@ where
     }
 }
 
-// BinaryHeap is not really queryable, due to its structure. This implementation means that a
-// BinaryHeap can at least exist in a data structure without preventing the rest of that structure
-// from being queried
+// BinaryHeap is not conveniently queryable. However, we can still
+// enumerate all of its values, though not in a predictable order
 impl<'q, T> Queryable<'q> for BinaryHeap<T>
 where
     T: Queryable<'q>,
 {
     fn name(&self) -> &'static str {
         "BinaryHeap"
+    }
+    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        NodeOrValueIter::from_queryables(self)
     }
 }
 

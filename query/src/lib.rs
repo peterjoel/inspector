@@ -51,6 +51,10 @@ impl Context {
         let ctx = ContextInner { ctx: self, root };
         q.exec(ctx)
     }
+
+    pub fn function_names(&self) -> impl Iterator<Item = String> + '_ {
+        self.fns.keys().cloned()
+    }
 }
 
 impl<'a> ContextInner<'a> {

@@ -7,7 +7,7 @@ license = "MIT"
 description = "A query language for inspecting Rust data structures at runtime"
 
 [workspace]
-members = ["core", "macros", "parse_pest", "query"]
+members = ["core", "macros", "parse_pest", "query", "cli"]
 
 [features]
 default = ["parser_pest", "derive", "query"]
