@@ -1,9 +1,10 @@
 [package]
 name = "clouseau_cli"
-version = "0.1.0"
+version = "0.3.2"
 authors = ["Peter Hall <peterjoel@gmail.com>"]
 edition = "2018"
-
+license = "MIT"
+description = "Interactive CLI lib for clouseau queries"
 
 [dependencies]
 clouseau_core = { path = "../core", version = "0.3.2" }
