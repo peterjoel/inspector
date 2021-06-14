@@ -258,7 +258,7 @@ impl Call {
         if let Some(f) = ctx.fun(&self.0) {
             f(values)
         } else {
-            NodeOrValueIter::one(Err(Error::VarNotFound))
+            NodeOrValueIter::one(Err(Error::FnNotFound))
         }
     }
 }

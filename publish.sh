@@ -8,4 +8,6 @@ sleep 25s
 sleep 25s
 (cd parse_pest; cargo publish) || exit $?
 sleep 25s
-cargo publish
+(cargo publish) || exit $?
+sleep 25s
+(cd cli; cargo publish) || exit $?
