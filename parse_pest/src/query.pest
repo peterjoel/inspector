@@ -11,7 +11,7 @@ filter = { "[" ~ path ~ op_compare ~ op_rhs ~ "]" }
 op_rhs = { path | literal | var }
 var = { "$" ~ ident }
 call = { "." ~ ident ~ "("  ~ ")" }
-op_compare = @{ "?"? ~ ("<=" | ">=" | "=" | ">" | "<") }
+op_compare = @{ "?"? ~ ("<=" | ">=" | "!=" | "=" | ">" | "<") }
 ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 literal = { array | bool | integer | string }
 array = { "{" ~ (literal ~ ("," ~ literal)* ~ ","?)? ~ "}" }

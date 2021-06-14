@@ -139,6 +139,7 @@ pub enum Compare {
     LessThan,
     LessThanEq,
     Eq,
+    Neq,
     GreaterThan,
     GreaterThanEq,
 }
@@ -381,6 +382,7 @@ impl Compare {
                 Compare::LessThan => a < b,
                 Compare::LessThanEq => a <= b,
                 Compare::Eq => a == b,
+                Compare::Neq => a != b,
                 Compare::GreaterThan => a > b,
                 Compare::GreaterThanEq => a >= b,
             },
@@ -388,6 +390,7 @@ impl Compare {
                 Compare::LessThan => a < b,
                 Compare::LessThanEq => a <= b,
                 Compare::Eq => a == b,
+                Compare::Neq => a != b,
                 Compare::GreaterThan => a > b,
                 Compare::GreaterThanEq => a >= b,
             },

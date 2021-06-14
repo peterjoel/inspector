@@ -116,11 +116,13 @@ fn parse_operator(pair: Pair<Rule>) -> Result<(MatchType, Compare)> {
         "<" => Ok((All, Compare::LessThan)),
         "<=" => Ok((All, Compare::LessThanEq)),
         "=" => Ok((All, Compare::Eq)),
+        "!=" => Ok((All, Compare::Neq)),
         "?>" => Ok((Any, Compare::GreaterThan)),
         "?>=" => Ok((Any, Compare::GreaterThanEq)),
         "?<" => Ok((Any, Compare::LessThan)),
         "?<=" => Ok((Any, Compare::LessThanEq)),
         "?=" => Ok((Any, Compare::Eq)),
+        "?!=" => Ok((Any, Compare::Neq)),
         _ => Err(Error::Pest),
     }
 }

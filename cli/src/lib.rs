@@ -15,6 +15,7 @@ pub fn repl<'q, D: Queryable<'q>>(data: &'q D, ctx: &'q Context) {
             CliResult::Done(query) => match parse_query(&query) {
                 Ok(query) => {
                     // I have screwed up the lifetimes somewhere, but this is safe to do
+                    // Um.. the occasional segfaults say otherwise...
                     let query: &'q Query = unsafe { &*(&query as *const _) };
                     let results: Vec<_> = ctx.exec(&query, data as _).take(100).collect();
                     cli.print_results(results)
@@ -61,6 +62,7 @@ fn run_query<'q, D: Queryable<'q>>(
 ) -> impl Iterator<Item = String> + 'q {
     if let Ok(query) = parse_query(query) {
         // I have screwed up the lifetimes somewhere, but this is safe to do
+        // Um.. the occasional segfaults say otherwise...
         let query: &'q Query = unsafe { &*(&query as *const _) };
         let mut results = ctx.exec(&query, data as _).peekable();
         if results.peek().is_some() {
