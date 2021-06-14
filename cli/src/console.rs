@@ -1,3 +1,4 @@
+use itertools::FoldWhile::{Continue, Done};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::fmt::Display;
@@ -185,28 +186,7 @@ impl Cli {
                 .unwrap();
             }
             ConsoleState::Suggesting => {
-                write!(
-                    stdout,
-                    "{}{}> {}\r\n{}[{}]{}",
-                    termion::cursor::Goto(1, cursor.1),
-                    termion::clear::CurrentLine,
-                    self.line.as_str(),
-                    termion::clear::CurrentLine,
-                    self.suggestions
-                        .matches()
-                        .iter()
-                        .enumerate()
-                        .map(|(i, s)| {
-                            if Some(i) == self.suggestions.selected {
-                                format!("{}{}{}", termion::style::Invert, s, termion::style::Reset)
-                            } else {
-                                s.clone()
-                            }
-                        })
-                        .join(", "),
-                    termion::cursor::Goto(self.line.cursor() as u16 + 3, cursor.1)
-                )
-                .unwrap();
+                self.render_suggestions(stdout);
             }
             ConsoleState::AcceptSuggestion => {
                 write!(
@@ -220,6 +200,65 @@ impl Cli {
             _ => {}
         }
         stdout.flush().unwrap();
+    }
+
+    fn render_suggestions(&self, stdout: &mut StdoutLock) {
+        let cursor = stdout.cursor_pos().unwrap();
+        let (width, _) = termion::terminal_size().unwrap();
+        let width = width as usize;
+        let (visible_suggestions, ..) = self
+            .suggestions
+            .matches()
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s, Some(i) == self.suggestions.selected))
+            .fold_while(
+                (VecDeque::new(), 2, false),
+                |(mut res, mut w, has_selected), (item, selected)| {
+                    if w + item.len() + 2 <= width {
+                        w += item.len() + 2;
+                        res.push_back((item, selected));
+                        Continue((res, w, has_selected || selected))
+                    } else if !has_selected {
+                        while w + item.len() + 2 > width {
+                            if let Some(removed) = res.pop_front() {
+                                w -= removed.0.len() + 2;
+                            }
+                        }
+                        w += item.len() + 2;
+                        res.push_back((item, selected));
+                        Continue((res, w, has_selected || selected))
+                    } else {
+                        Done((res, w, has_selected))
+                    }
+                },
+            )
+            .into_inner();
+        write!(
+            stdout,
+            "{}{}> {}\r\n{}[{}]{}",
+            termion::cursor::Goto(1, cursor.1),
+            termion::clear::CurrentLine,
+            self.line.as_str(),
+            termion::clear::CurrentLine,
+            visible_suggestions
+                .into_iter()
+                .map(|(word, selected)| {
+                    if selected {
+                        format!(
+                            "{}{}{}",
+                            termion::style::Invert,
+                            word,
+                            termion::style::Reset
+                        )
+                    } else {
+                        word.clone()
+                    }
+                })
+                .join(", "),
+            termion::cursor::Goto(self.line.cursor() as u16 + 3, cursor.1)
+        )
+        .unwrap();
     }
 }
 
@@ -273,7 +312,6 @@ fn filter_suggestions(line: &InputLine, suggestions: &mut Suggestions) -> Option
                 .iter()
                 .filter(|cmd| cmd.starts_with(&word))
                 .map(ToString::to_string)
-                .take(10)
                 .collect()
         })
         .unwrap_or_default();
@@ -293,13 +331,15 @@ fn suggesting(
 ) -> Option<ConsoleState> {
     match key {
         Key::Ctrl('c') => Some(ConsoleState::Quit),
-        Key::Char('\t') => {
-            let num_suggestions = suggestions.matches().len();
-            let selected = (suggestions.selected.unwrap_or(num_suggestions) + 1) % num_suggestions;
-            suggestions.selected = Some(selected);
+        Key::Left => {
+            suggestions.change_selection(-1);
             None
         }
-        Key::Char('\n') => Some(ConsoleState::AcceptSuggestion),
+        Key::Right => {
+            suggestions.change_selection(1);
+            None
+        }
+        Key::Char('\t') | Key::Char('\n') => Some(ConsoleState::AcceptSuggestion),
         Key::Esc => Some(ConsoleState::Typing),
         _ => {
             // n.b. not sending TAB to typing
@@ -371,6 +411,16 @@ impl Suggestions {
             self.selected = Some(0);
         }
         self.matches = matches;
+    }
+
+    fn change_selection(&mut self, diff: isize) {
+        if self.matches.is_empty() {
+            return;
+        }
+        if let Some(index) = self.selected {
+            let n = self.matches.len() as isize;
+            self.selected = Some((n + index as isize + diff).max(0) as usize % n as usize);
+        }
     }
 
     fn matches(&self) -> &[String] {
