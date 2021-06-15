@@ -10,6 +10,7 @@ description = "Internal dependency of clouseau"
 proc-macro = true
 
 [dependencies]
+darling = "0.13"
 proc-macro2 = "1"
 syn = { version = "1", features = ["derive", "printing", "parsing"] }
 quote = "1"
