@@ -13,6 +13,7 @@ struct Foo {
 struct Bar(bool, AnEnum, Foo);
 
 #[derive(Debug, Queryable)]
+#[clouseau(transparent)]
 struct NewType(Foo);
 
 #[derive(Debug, Queryable)]

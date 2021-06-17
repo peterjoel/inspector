@@ -30,6 +30,8 @@ pub enum Error {
     PathOnValue,
     #[error("Input is empty in {0}")]
     Empty(&'static str),
+    #[error("Conversion failed: {0}")]
+    Conversion(#[from] Box<dyn std::error::Error>),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
