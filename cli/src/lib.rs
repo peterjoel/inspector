@@ -38,13 +38,13 @@ fn get_suggestions<'q, D: Queryable<'q>>(
     match query.chars().last() {
         Some('/') => {
             let query = if query.len() == 1 {
-                String::from("..keys()")
+                String::from(".keys()")
             } else {
                 format!("{}.keys()", &query[..query.len() - 1])
             };
             run_query(data, ctx, &query).collect()
         }
-        None => run_query(data, ctx, "..keys()")
+        None => run_query(data, ctx, ".keys()")
             .map(|k| format!("/{}", k))
             .collect(),
         Some('.') => ctx

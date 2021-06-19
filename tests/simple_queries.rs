@@ -308,8 +308,7 @@ fn function_keys() {
     };
 
     let ctx = Context::default();
-    // ugh, need to fix that syntax
-    let q = parse_query(r#"..keys()"#).unwrap();
+    let q = parse_query(r#".keys()"#).unwrap();
     let result: Vec<String> = ctx.exec(&q, &d).map(|v| v.to_string()).collect();
     let expected: Vec<String> = vec_from!["a", "b"];
     assert_eq!(result, expected);

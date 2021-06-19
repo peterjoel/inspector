@@ -27,7 +27,7 @@ fn display_composite_keys() {
         (9, String::from("xyz"), 5): 5,
     };
     let ctx = Context::default();
-    let q = parse_query(r#" ..keys().min() "#).unwrap();
+    let q = parse_query(r#" .keys().min() "#).unwrap();
     let result: HashSet<String> = ctx.exec(&q, &t).map(|v| v.to_string()).collect();
     assert_eq!(result, hash_set_from![r#"{7, "abc", 3}"#]);
 }

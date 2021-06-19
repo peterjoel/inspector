@@ -1,10 +1,10 @@
 query = { SOI ~ path ~ EOI }
 path = {
-    (absolute | relative) ~ selector*
+    (absolute | selector | relative) ~ selector*
 }
 selector = { segment | filter | call }
 absolute = @{ &"/" }
-relative = @{ "." }
+relative = @{ "." ~ !"." }
 segment = { "/" ~ (wildcard | "key:" ~ literal | ident | integer) }
 wildcard = @{ "*" }
 filter = { "[" ~ path ~ op_compare ~ op_rhs ~ "]" }
