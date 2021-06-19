@@ -27,7 +27,7 @@ pub fn sum<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
 pub fn max<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     match process_results(
         input
-            .map_ok(NodeOrValue::try_into_int)
+            .map_ok(NodeOrValue::try_into_value)
             .map(|v| v.and_then(|r| r)), // flatten?
         |iter| iter.max(),
     )
@@ -42,7 +42,7 @@ pub fn max<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
 pub fn min<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     match process_results(
         input
-            .map_ok(NodeOrValue::try_into_int)
+            .map_ok(NodeOrValue::try_into_value)
             .map(|v| v.and_then(|r| r)), // flatten
         |iter| iter.min(),
     )

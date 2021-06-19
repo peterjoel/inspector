@@ -273,6 +273,28 @@ impl Iterator for ArrayIter {
     }
 }
 
+impl fmt::Display for Array {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("{")?;
+        let mut it = self.clone().into_iter().peekable();
+        while let Some(val) = it.next() {
+            let mut format = |args| {
+                if it.peek().is_some() {
+                    write!(f, "{}, ", args)
+                } else {
+                    write!(f, "{}", args)
+                }
+            };
+            if let Value::String(s) = val {
+                format(format_args!(r#""{}""#, s))
+            } else {
+                format(format_args!("{}", val))
+            }?;
+        }
+        f.write_str("}")
+    }
+}
+
 impl Value {
     pub fn try_into_int(self) -> Result<i64> {
         if let Value::Int(i) = self {
@@ -289,7 +311,7 @@ impl fmt::Display for Value {
             Value::String(v) => write!(f, "{}", v),
             Value::Int(v) => write!(f, "{}", v),
             Value::Bool(v) => write!(f, "{}", v),
-            Value::Array(v) => write!(f, "{:?}", v),
+            Value::Array(v) => write!(f, "{}", v),
             Value::Float(v) => write!(f, "{}", v),
         }
     }
