@@ -73,6 +73,7 @@ fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     let pair = pair.into_inner().next().ok_or(Error::Pest)?;
     match pair.as_rule() {
         Rule::wildcard => Ok(SegmentType::Children.into_segment()),
+        Rule::descendants => Ok(SegmentType::Descendants.into_segment()),
         Rule::ident | Rule::integer => Ok(SegmentType::Child(pair.as_str().into()).into_segment()),
         Rule::literal => Ok(SegmentType::Child(parse_value(pair)?).into_segment()),
         _ => Err(Error::Pest),

@@ -24,6 +24,9 @@ impl Default for Context {
         fns.insert(String::from("first"), Box::new(std_fns::first));
         fns.insert(String::from("last"), Box::new(std_fns::last));
         fns.insert(String::from("keys"), Box::new(std_fns::keys));
+        fns.insert(String::from("data"), Box::new(std_fns::data));
+        fns.insert(String::from("integers"), Box::new(std_fns::integers));
+        fns.insert(String::from("strings"), Box::new(std_fns::strings));
         let vars = HashMap::new();
         Context { fns, vars }
     }
@@ -93,7 +96,6 @@ pub enum Selector {
 #[derive(Debug)]
 pub struct Segment {
     segment_type: SegmentType,
-    filter: Option<Pred>,
 }
 
 #[derive(Debug)]
@@ -102,6 +104,7 @@ pub enum SegmentType {
     Current,
     Child(Value),
     Children,
+    Descendants,
 }
 
 #[derive(Debug)]
@@ -416,22 +419,17 @@ impl SegmentType {
             SegmentType::Children => q.all(),
             SegmentType::Current => NodeOrValueIter::one_node(q),
             SegmentType::Root => NodeOrValueIter::one_node(ctx.root),
+            SegmentType::Descendants => q.descendants(),
         }
     }
 
     pub fn into_segment(self) -> Segment {
-        Segment {
-            segment_type: self,
-            filter: None,
-        }
+        Segment { segment_type: self }
     }
 }
 
 impl From<SegmentType> for Segment {
     fn from(segment_type: SegmentType) -> Self {
-        Segment {
-            segment_type,
-            filter: None,
-        }
+        Segment { segment_type }
     }
 }

@@ -99,3 +99,36 @@ pub fn keys<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
         Err(e) => NodeOrValueIter::from_nodes(Err(e)),
     }))
 }
+
+pub fn data<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    NodeOrValueIter::from_raw(input.filter_map_ok(|node| match node {
+        val @ NodeOrValue::Value(_) => Some(val),
+        NodeOrValue::Node(node) => node.data().map(Into::into),
+    }))
+}
+
+pub fn integers<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    NodeOrValueIter::from_raw(input.filter_map_ok(|node| {
+        match node {
+            val @ NodeOrValue::Value(Value::Int(_)) => Some(val),
+            NodeOrValue::Value(_) => None,
+            NodeOrValue::Node(node) => node
+                .data()
+                .filter(|value| matches!(value, Value::Int(_)))
+                .map(Into::into),
+        }
+    }))
+}
+
+pub fn strings<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+    NodeOrValueIter::from_raw(input.filter_map_ok(|node| {
+        match node {
+            val @ NodeOrValue::Value(Value::String(_)) => Some(val),
+            NodeOrValue::Value(_) => None,
+            NodeOrValue::Node(node) => node
+                .data()
+                .filter(|value| matches!(value, Value::String(_)))
+                .map(Into::into),
+        }
+    }))
+}

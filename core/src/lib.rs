@@ -225,6 +225,22 @@ pub trait Queryable<'q> {
     fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
         NodeOrValueIter::empty()
     }
+    fn descendants<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+        if self.all().next().is_some() {
+            NodeOrValueIter::from_raw(self.all().chain(self.all().flat_map(|node| {
+                if let Ok(node) = node {
+                    match node {
+                        NodeOrValue::Node(node) => node.descendants(),
+                        NodeOrValue::Value(value) => NodeOrValueIter::one_value(value),
+                    }
+                } else {
+                    NodeOrValueIter::empty()
+                }
+            })))
+        } else {
+            self.all()
+        }
+    }
     fn name(&self) -> &'static str;
     fn data(&self) -> Option<Value> {
         None

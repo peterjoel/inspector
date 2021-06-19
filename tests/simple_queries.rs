@@ -209,6 +209,40 @@ fn complex_query() {
 }
 
 #[test]
+fn descendants() {
+    let ctx = Context::default();
+    let q = parse_query(r#"/**[./a = 5]/b"#).unwrap();
+    let result: Vec<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["xxx"];
+    assert_eq!(result, expected);
+
+    let q = parse_query(r#"/**.integers().max()"#).unwrap();
+    let result: Vec<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from!["444"];
+    assert_eq!(result, expected);
+
+    let q = parse_query(r#"/**.data().min()"#).unwrap();
+    let result: Vec<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected: Vec<String> = vec_from![""];
+    assert_eq!(result, expected);
+
+    let q = parse_query(r#"/**.keys().distinct()"#).unwrap();
+    let result: HashSet<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected = hash_set_from!["0", "1", "2", "3", "6", "55", "66", "100", "a", "b", "c"];
+    assert_eq!(result, expected);
+
+    let q = parse_query(r#"/**.strings().distinct()"#).unwrap();
+    let result: HashSet<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected = hash_set_from!["", "SDFDF", "Two", "xxx", "s", "One", "Three"];
+    assert_eq!(result, expected);
+
+    let q = parse_query(r#"/**[.keys() ?= "a"].keys().distinct()"#).unwrap();
+    let result: HashSet<String> = ctx.exec(&q, &example()).map(|v| v.to_string()).collect();
+    let expected = hash_set_from!["a", "b", "c"];
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn compare_paths() {
     #[derive(Queryable)]
     struct Data {
