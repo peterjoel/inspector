@@ -1,3 +1,4 @@
+use crate::history::History;
 use itertools::FoldWhile::{Continue, Done};
 use itertools::Itertools;
 use std::collections::VecDeque;
@@ -51,6 +52,13 @@ impl Default for Cli {
 }
 
 impl Cli {
+    pub fn new(history: Option<History>) -> Self {
+        Self {
+            history: history.unwrap_or_default(),
+            ..Default::default()
+        }
+    }
+
     pub fn run(&mut self) -> CliResult {
         let stdout = stdout().into_raw_mode().unwrap();
         let mut stdout = stdout.lock();
@@ -66,7 +74,7 @@ impl Cli {
                 ConsoleState::Done => {
                     let query = std::mem::take(&mut self.line).into_string();
                     self.history.save(query.clone());
-                    // ugly fix to put it in the right state for next time
+                    // Put it in the right state for next time
                     self.state = ConsoleState::Typing;
                     if query.is_empty() {
                         None
@@ -113,6 +121,10 @@ impl Cli {
             }
             .unwrap_or(self.state);
         }
+    }
+
+    pub fn history(&self) -> &History {
+        &self.history
     }
 
     pub fn print_results<T: Display>(&mut self, results: impl IntoIterator<Item = T>) -> CliResult {
@@ -346,45 +358,6 @@ fn suggesting(
             typing(key, line);
             Some(ConsoleState::FilterSuggestions)
         }
-    }
-}
-
-#[derive(Debug)]
-struct History {
-    history: VecDeque<String>,
-    index: usize,
-    max: usize,
-}
-
-impl Default for History {
-    fn default() -> Self {
-        History {
-            history: VecDeque::new(),
-            index: 0,
-            max: 100,
-        }
-    }
-}
-
-impl History {
-    pub fn current(&self) -> Option<&str> {
-        self.history.get(self.index).map(|s| s.as_str())
-    }
-
-    pub fn save(&mut self, item: String) {
-        if self.history.len() == self.max {
-            self.history.pop_front();
-        }
-        self.history.push_back(item);
-        self.index = self.history.len() - 1;
-    }
-
-    pub fn up(&mut self) {
-        self.index = self.index.saturating_sub(1);
-    }
-
-    pub fn down(&mut self) {
-        self.index = self.history.len().min(self.index + 1);
     }
 }
 

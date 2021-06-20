@@ -48,12 +48,13 @@ fn main() {
         ],
         bar: hash_map_from! {
             "eel": 4,
+            "fly": 3,
             "snapper": 60,
             "barnacle": 3,
         },
     };
 
     let ctx = Context::default();
-
-    repl(&data, &ctx);
+    let cli = ClouseauConsole::default().with_persistent_history(None);
+    cli.run(&data, &ctx);
 }
