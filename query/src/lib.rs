@@ -94,12 +94,7 @@ pub enum Selector {
 }
 
 #[derive(Debug)]
-pub struct Segment {
-    segment_type: SegmentType,
-}
-
-#[derive(Debug)]
-pub enum SegmentType {
+pub enum Segment {
     Root,
     Current,
     Child(Value),
@@ -196,22 +191,13 @@ impl Path {
     fn is_from_root(&self) -> bool {
         matches!(
             self.selectors.first(),
-            Some(Selector::Segment(Segment {
-                segment_type: SegmentType::Root,
-                ..
-            }))
+            Some(Selector::Segment(Segment::Root))
         )
     }
 
     fn is_dot(&self) -> bool {
         self.selectors.len() == 1
-            && matches!(
-                self.selectors[0],
-                Selector::Segment(Segment {
-                    segment_type: SegmentType::Current,
-                    ..
-                })
-            )
+            && matches!(self.selectors[0], Selector::Segment(Segment::Current))
     }
 }
 
@@ -246,7 +232,19 @@ impl Segment {
         node_or_value: NodeOrValue<'a, 'q>,
     ) -> NodeOrValueIter<'a, 'q> {
         if let NodeOrValue::Node(q) = node_or_value {
-            self.segment_type.exec(ctx, q)
+            match self {
+                Self::Child(s) => {
+                    if let Some(q) = q.member(&s) {
+                        NodeOrValueIter::one_node(q)
+                    } else {
+                        NodeOrValueIter::empty()
+                    }
+                }
+                Self::Children => q.all(),
+                Self::Current => NodeOrValueIter::one_node(q),
+                Self::Root => NodeOrValueIter::one_node(ctx.root),
+                Self::Descendants => q.descendants(),
+            }
         } else {
             NodeOrValueIter::from_raw(iter::once(Err(Error::ExpectedNode)))
         }
@@ -399,37 +397,5 @@ impl Compare {
             },
             _ => false,
         }
-    }
-}
-
-impl SegmentType {
-    pub fn exec<'a: 'q, 'q>(
-        &'a self,
-        ctx: ContextInner<'a>,
-        q: Node<'a, 'q>,
-    ) -> NodeOrValueIter<'a, 'q> {
-        match self {
-            SegmentType::Child(s) => {
-                if let Some(q) = q.member(&s) {
-                    NodeOrValueIter::one_node(q)
-                } else {
-                    NodeOrValueIter::empty()
-                }
-            }
-            SegmentType::Children => q.all(),
-            SegmentType::Current => NodeOrValueIter::one_node(q),
-            SegmentType::Root => NodeOrValueIter::one_node(ctx.root),
-            SegmentType::Descendants => q.descendants(),
-        }
-    }
-
-    pub fn into_segment(self) -> Segment {
-        Segment { segment_type: self }
-    }
-}
-
-impl From<SegmentType> for Segment {
-    fn from(segment_type: SegmentType) -> Self {
-        Segment { segment_type }
     }
 }

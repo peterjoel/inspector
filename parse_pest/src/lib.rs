@@ -36,12 +36,8 @@ fn parse_path(pair: Pair<Rule>) -> Result<Path> {
     let mut path = Path::default();
     for pair in pair.into_inner() {
         match pair.as_rule() {
-            Rule::absolute => {
-                path.add_selector(Selector::Segment(SegmentType::Root.into_segment()))
-            }
-            Rule::relative => {
-                path.add_selector(Selector::Segment(SegmentType::Current.into_segment()))
-            }
+            Rule::absolute => path.add_selector(Selector::Segment(Segment::Root)),
+            Rule::relative => path.add_selector(Selector::Segment(Segment::Current)),
             Rule::selector => path.add_selector(parse_selector(pair)?),
             _ => return Err(Error::Pest),
         }
@@ -72,10 +68,10 @@ fn parse_var(pair: Pair<Rule>) -> Result<String> {
 fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     let pair = pair.into_inner().next().ok_or(Error::Pest)?;
     match pair.as_rule() {
-        Rule::wildcard => Ok(SegmentType::Children.into_segment()),
-        Rule::descendants => Ok(SegmentType::Descendants.into_segment()),
-        Rule::ident | Rule::integer => Ok(SegmentType::Child(pair.as_str().into()).into_segment()),
-        Rule::literal => Ok(SegmentType::Child(parse_value(pair)?).into_segment()),
+        Rule::wildcard => Ok(Segment::Children),
+        Rule::descendants => Ok(Segment::Descendants),
+        Rule::ident | Rule::integer => Ok(Segment::Child(pair.as_str().into())),
+        Rule::literal => Ok(Segment::Child(parse_value(pair)?)),
         _ => Err(Error::Pest),
     }
 }
