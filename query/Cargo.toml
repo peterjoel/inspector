@@ -1,11 +1,11 @@
 [package]
 name = "clouseau_query"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["Peter Hall <peterjoel@gmail.com>"]
 edition = "2018"
 license = "MIT"
 description = "Internal dependency of clouseau"
 
 [dependencies]
-clouseau_core = { path = "../core", version = "0.3.3"}
+clouseau_core = { path = "../core", version = "0.3.4"}
 itertools = "0.10"
