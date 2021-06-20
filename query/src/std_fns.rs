@@ -35,7 +35,7 @@ pub fn max<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     .ok_or(Error::Empty("max()"))
     {
         Err(e) | Ok(Err(e)) => NodeOrValueIter::one(Err(e)),
-        Ok(Ok(max)) => NodeOrValueIter::one_value(Value::from(max)),
+        Ok(Ok(max)) => NodeOrValueIter::one_value(max),
     }
 }
 
@@ -50,7 +50,7 @@ pub fn min<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     .ok_or(Error::Empty("min()"))
     {
         Err(e) | Ok(Err(e)) => NodeOrValueIter::one(Err(e)),
-        Ok(Ok(min)) => NodeOrValueIter::one_value(Value::from(min)),
+        Ok(Ok(min)) => NodeOrValueIter::one_value(min),
     }
 }
 

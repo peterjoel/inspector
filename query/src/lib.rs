@@ -28,7 +28,7 @@ impl Default for Context {
         fns.insert(String::from("integers"), Box::new(std_fns::integers));
         fns.insert(String::from("strings"), Box::new(std_fns::strings));
         let vars = HashMap::new();
-        Context { fns, vars }
+        Context { vars, fns }
     }
 }
 
@@ -118,10 +118,10 @@ impl Call {
 
 #[derive(Debug)]
 pub struct Pred {
-    match_type: MatchType,
     path: Path,
     compare: Compare,
     rhs: OperatorRhs,
+    match_type: MatchType,
 }
 
 #[derive(Debug)]
