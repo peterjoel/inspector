@@ -482,7 +482,7 @@ fn impl_to_from_value(
                     type Error = clouseau::core::Error;
                     fn try_from(value: clouseau::core::Value) -> std::result::Result<Self, Self::Error> {
                         let via: #as_type = std::convert::TryInto::try_into(value)?;
-                        Ok(via.try_into().map_err(|e| clouseau::core::Error::Conversion(Box::from(e)))?)
+                        via.try_into().map_err(|e| clouseau::core::Error::Conversion(Box::from(e)))
                     }
                 }
                 impl std::convert::From<#name> for ::clouseau::core::Value {

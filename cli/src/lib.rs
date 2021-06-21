@@ -88,8 +88,8 @@ impl ClouseauConsole {
         if let Some(path) = &self.persist_history {
             let mut file = OpenOptions::new().write(true).create(true).open(&path)?;
             for query in history.iter() {
-                file.write(query.as_bytes())?;
-                file.write(b"\n")?;
+                file.write_all(query.as_bytes())?;
+                file.write_all(b"\n")?;
             }
         }
         Ok(())
