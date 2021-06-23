@@ -230,7 +230,7 @@ impl Segment {
         if let NodeOrValue::Node(q) = node_or_value {
             match self {
                 Self::Child(s) => {
-                    if let Some(q) = q.member(&s) {
+                    if let Some(q) = q.member(s) {
                         NodeOrValueIter::one_node(q)
                     } else {
                         NodeOrValueIter::empty()
@@ -342,7 +342,7 @@ impl Pred {
                 iter.any(|v| self.compare.compare_values(&v, value))
             })?,
             OperatorRhs::Var(ident) => {
-                if let Some(value) = ctx.var(&ident) {
+                if let Some(value) = ctx.var(ident) {
                     process_results(lhs, |mut iter| {
                         iter.any(|v| self.compare.compare_values(&v, &value))
                     })?
