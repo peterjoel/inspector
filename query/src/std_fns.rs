@@ -3,7 +3,7 @@ use itertools::{process_results, Itertools as _};
 use std::collections::HashSet;
 use std::iter;
 
-pub fn count<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn count(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     NodeOrValueIter::from_raw(iter::once(
         process_results(input, |iter| iter.count())
             .map(Value::from)
@@ -11,7 +11,7 @@ pub fn count<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> 
     ))
 }
 
-pub fn sum<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn sum(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     NodeOrValueIter::from_raw(iter::once(
         process_results(
             input
@@ -24,7 +24,7 @@ pub fn sum<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     ))
 }
 
-pub fn max<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn max(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     match process_results(
         input
             .map_ok(NodeOrValue::try_into_value)
@@ -39,7 +39,7 @@ pub fn max<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     }
 }
 
-pub fn min<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn min(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     match process_results(
         input
             .map_ok(NodeOrValue::try_into_value)
@@ -54,7 +54,7 @@ pub fn min<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     }
 }
 
-pub fn first<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn first(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     match process_results(input, |iter| iter.take(1).next())
         .transpose()
         .ok_or(Error::Empty("first()"))
@@ -64,7 +64,7 @@ pub fn first<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> 
     }
 }
 
-pub fn last<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn last(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     match process_results(input, |iter| {
         iter.fold(None, |mut last, val| {
             last.replace(val);
@@ -79,7 +79,7 @@ pub fn last<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     }
 }
 
-pub fn distinct<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn distinct(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     match input
         .map_ok(NodeOrValue::try_into_value)
         .map(|v| v.and_then(|r| r)) // flatten?
@@ -92,7 +92,7 @@ pub fn distinct<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, '
     }
 }
 
-pub fn keys<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn keys(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     NodeOrValueIter::from_raw(input.flat_map(|node| match node {
         Ok(NodeOrValue::Node(node)) => NodeOrValueIter::from_values(node.keys()),
         Ok(NodeOrValue::Value(_)) => NodeOrValueIter::from_nodes(Err(Error::ExpectedNode)),
@@ -100,14 +100,14 @@ pub fn keys<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
     }))
 }
 
-pub fn data<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn data(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     NodeOrValueIter::from_raw(input.filter_map_ok(|node| match node {
         val @ NodeOrValue::Value(_) => Some(val),
         NodeOrValue::Node(node) => node.data().map(Into::into),
     }))
 }
 
-pub fn integers<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn integers(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     NodeOrValueIter::from_raw(input.filter_map_ok(|node| {
         match node {
             val @ NodeOrValue::Value(Value::Int(_)) => Some(val),
@@ -120,7 +120,7 @@ pub fn integers<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, '
     }))
 }
 
-pub fn strings<'a, 'q>(input: NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> {
+pub fn strings(input: NodeOrValueIter<'_>) -> NodeOrValueIter<'_> {
     NodeOrValueIter::from_raw(input.filter_map_ok(|node| {
         match node {
             val @ NodeOrValue::Value(Value::String(_)) => Some(val),

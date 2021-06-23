@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::iter;
 
-type ValueFn = dyn for<'a, 'q> Fn(NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q>;
+type ValueFn = dyn for<'a> Fn(NodeOrValueIter<'a>) -> NodeOrValueIter<'a>;
 
 pub struct Context {
     vars: HashMap<String, Value>,
@@ -40,7 +40,7 @@ impl Context {
 
     pub fn with_fun<F>(mut self, name: String, fun: F) -> Self
     where
-        F: for<'a, 'q> Fn(NodeOrValueIter<'a, 'q>) -> NodeOrValueIter<'a, 'q> + 'static,
+        F: for<'a> Fn(NodeOrValueIter<'a>) -> NodeOrValueIter<'a> + 'static,
     {
         self.fns.insert(name, Box::new(fun) as _);
         self
@@ -49,7 +49,7 @@ impl Context {
     pub fn exec<'a>(
         &'a self,
         q: &'a Query,
-        root: &'a dyn Queryable<'a>,
+        root: &'a dyn Queryable,
     ) -> impl Iterator<Item = Box<dyn fmt::Display + 'a>> + 'a {
         let ctx = ContextInner { ctx: self, root };
         q.exec(ctx)
@@ -72,7 +72,7 @@ impl<'a> ContextInner<'a> {
 
 #[derive(Clone, Copy)]
 pub struct ContextInner<'a> {
-    root: Node<'a, 'a>,
+    root: Node<'a>,
     ctx: &'a Context,
 }
 
@@ -163,11 +163,7 @@ impl Path {
         self.selectors.push(selector);
     }
 
-    pub fn exec<'a: 'q, 'q>(
-        &'a self,
-        ctx: ContextInner<'a>,
-        q: Option<Node<'a, 'q>>,
-    ) -> NodeOrValueIter<'a, 'q> {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: Option<Node<'a>>) -> NodeOrValueIter<'a> {
         if let Some(init) = q
             .or_else(|| {
                 if self.is_from_root() {
@@ -202,11 +198,11 @@ impl Path {
 }
 
 impl Selector {
-    pub fn exec<'a: 'q, 'q>(
+    pub fn exec<'a>(
         &'a self,
         ctx: ContextInner<'a>,
-        values: NodeOrValueIter<'a, 'q>,
-    ) -> NodeOrValueIter<'a, 'q> {
+        values: NodeOrValueIter<'a>,
+    ) -> NodeOrValueIter<'a> {
         match self {
             Selector::Segment(segment) => {
                 NodeOrValueIter::from_raw(values.flat_map(move |node_or_val| match node_or_val {
@@ -226,11 +222,11 @@ impl Selector {
 }
 
 impl Segment {
-    pub fn exec<'a: 'q, 'q>(
+    pub fn exec<'a>(
         &'a self,
         ctx: ContextInner<'a>,
-        node_or_value: NodeOrValue<'a, 'q>,
-    ) -> NodeOrValueIter<'a, 'q> {
+        node_or_value: NodeOrValue<'a>,
+    ) -> NodeOrValueIter<'a> {
         if let NodeOrValue::Node(q) = node_or_value {
             match self {
                 Self::Child(s) => {
@@ -252,11 +248,11 @@ impl Segment {
 }
 
 impl Call {
-    pub fn exec<'a: 'q, 'q>(
+    pub fn exec<'a>(
         &'a self,
         ctx: ContextInner<'a>,
-        values: NodeOrValueIter<'a, 'q>,
-    ) -> NodeOrValueIter<'a, 'q> {
+        values: NodeOrValueIter<'a>,
+    ) -> NodeOrValueIter<'a> {
         if let Some(f) = ctx.fun(&self.0) {
             f(values)
         } else {
@@ -275,11 +271,11 @@ impl Pred {
         }
     }
 
-    fn exec<'a: 'q, 'q>(
-        &'a self,
+    fn exec<'a>(
+        &self,
         ctx: ContextInner<'a>,
-        node_or_value: NodeOrValue<'a, 'q>,
-    ) -> NodeOrValueIter<'a, 'q> {
+        node_or_value: NodeOrValue<'a>,
+    ) -> NodeOrValueIter<'a> {
         match node_or_value {
             NodeOrValue::Node(node) => match self.pred(
                 ctx,
@@ -306,11 +302,11 @@ impl Pred {
         }
     }
 
-    fn pred<'a: 'q, 'q>(
-        &'a self,
+    fn pred<'a>(
+        &self,
         ctx: ContextInner<'a>,
         lhs: impl Iterator<Item = Result<Value>> + 'a,
-        node: Option<Node<'a, 'q>>,
+        node: Option<Node<'a>>,
     ) -> Result<bool> {
         Ok(match &self.rhs {
             OperatorRhs::Path(path) => {
@@ -359,11 +355,7 @@ impl Pred {
 }
 
 impl OperatorRhs {
-    pub fn exec<'a: 'q, 'q>(
-        &'a self,
-        ctx: ContextInner<'a>,
-        q: Node<'a, 'q>,
-    ) -> NodeOrValueIter<'a, 'q> {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: Node<'a>) -> NodeOrValueIter<'a> {
         match self {
             OperatorRhs::Value(value) => NodeOrValueIter::one_value(value.clone()),
             OperatorRhs::Path(path) => path.exec(ctx, Some(q)),

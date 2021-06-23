@@ -8,14 +8,14 @@ struct Foo {
     v: Vec<u32>,
 }
 
-impl<'q> Queryable<'q> for Foo {
+impl Queryable for Foo {
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::from_values(vec!["a", "b", "v"].into_iter())
     }
     fn name(&self) -> &'static str {
         "Foo"
     }
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
         if let Value::String(s) = field {
             match s.as_str() {
                 "a" => Some(&self.a as _),
@@ -27,7 +27,7 @@ impl<'q> Queryable<'q> for Foo {
             None
         }
     }
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         NodeOrValueIter::from_nodes(vec![&self.a as _, &self.b as _, &self.v as _])
     }
 }

@@ -3,7 +3,7 @@ mod history;
 
 use clouseau_core::Queryable;
 use clouseau_pest::{parse_query, Result};
-use clouseau_query::{Context, Query};
+use clouseau_query::Context;
 use console::{Cli, CliResult};
 use directories::BaseDirs;
 use history::History;
@@ -41,7 +41,7 @@ impl ClouseauConsole {
         self
     }
 
-    pub fn run<'q, D: Queryable<'q>>(self, data: &'q D, ctx: &'q Context) {
+    pub fn run<D: Queryable>(self, data: &D, ctx: &Context) {
         let mut state = CliResult::Ready;
         let history = match self.load_history() {
             Err(e) => {
@@ -96,11 +96,7 @@ impl ClouseauConsole {
     }
 }
 
-fn get_suggestions<'q, D: Queryable<'q>>(
-    data: &'q D,
-    ctx: &'q Context,
-    query: String,
-) -> Vec<String> {
+fn get_suggestions<D: Queryable>(data: &D, ctx: &Context, query: String) -> Vec<String> {
     if query.ends_with("./") {
         run_query(data, ctx, &format!("{}.keys()", &query[..query.len() - 2]))
             .ok()
@@ -120,15 +116,8 @@ fn get_suggestions<'q, D: Queryable<'q>>(
     }
 }
 
-fn run_query<'q, D: Queryable<'q>>(
-    data: &'q D,
-    ctx: &'q Context,
-    query: &str,
-) -> Result<Vec<String>> {
+fn run_query<D: Queryable>(data: &D, ctx: &Context, query: &str) -> Result<Vec<String>> {
     parse_query(query).map(|query| {
-        // I have probably screwed up the lifetimes somewhere for this to be necessary, but this is safe to
-        // do (provided that we don't do anything stupid, like return an iterator that references the query)
-        let query: &'q Query = unsafe { &*(&query as *const _) };
         let results = ctx.exec(&query, data as _).peekable();
         results.take(100).map(|d| d.to_string()).collect()
     })

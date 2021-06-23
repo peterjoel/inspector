@@ -2,12 +2,12 @@ use darling::{
     ast::{Data, Fields, Style},
     Error, FromDeriveInput, Result,
 };
-use proc_macro2::{Literal, Span, TokenStream};
+use proc_macro2::{Literal, TokenStream};
 use quote::{quote, ToTokens};
 use std::iter::Extend;
 use syn::{
-    parse_macro_input, parse_quote, spanned::Spanned, DeriveInput, Field, Generics, Ident,
-    Lifetime, Path, TypeGenerics, Variant, WhereClause, WherePredicate,
+    parse_macro_input, parse_quote, spanned::Spanned, DeriveInput, Field, Generics, Ident, Path,
+    TypeGenerics, Variant, WhereClause, WherePredicate,
 };
 
 #[derive(FromDeriveInput)]
@@ -41,10 +41,7 @@ fn impl_queryable(input: ClouseauDeriveInput) -> Result<TokenStream> {
         ));
     }
     let name = &input.ident;
-    let q_life = &Lifetime::new("'__clouseau_q", Span::call_site());
-    let a_life = &Lifetime::new("'__clouseau_a", Span::call_site());
-    let (impl_generics, type_generics, where_clause) =
-        create_generics(q_life.clone(), &input.generics);
+    let (impl_generics, type_generics, where_clause) = create_generics(&input.generics);
     let (member_body, all_body, data_body, keys_body, value_impls) = match &input.data {
         Data::Struct(data) => (
             struct_member_body(data, input.transparent)?,
@@ -68,19 +65,17 @@ fn impl_queryable(input: ClouseauDeriveInput) -> Result<TokenStream> {
         }
     };
     Ok(quote! {
-        impl#impl_generics ::clouseau::core::Queryable<#q_life> for #name#type_generics #where_clause {
+        impl#impl_generics ::clouseau::core::Queryable for #name#type_generics #where_clause {
             fn name(&self) -> &'static str {
                 stringify!(#name)
             }
             fn keys(&self) -> clouseau::core::ValueIter<'_> {
                 #keys_body
             }
-            fn member<#a_life, 'f>(&#a_life self, field_name: &'f ::clouseau::core::Value) ->
-                Option<::clouseau::core::Node<#a_life, #q_life>>
-            {
+            fn member<'f>(&self, field_name: &'f ::clouseau::core::Value) -> Option<::clouseau::core::Node<'_>> {
                 #member_body
             }
-            fn all<#a_life>(&#a_life self) -> ::clouseau::core::NodeOrValueIter<#a_life, #q_life> {
+            fn all(&self) -> ::clouseau::core::NodeOrValueIter<'_> {
                 #all_body
             }
             fn data(&self) -> Option<::clouseau::core::Value> {
@@ -91,30 +86,26 @@ fn impl_queryable(input: ClouseauDeriveInput) -> Result<TokenStream> {
     })
 }
 
-struct ImplGenerics<'a>(&'a Generics, Lifetime);
+struct ImplGenerics<'a>(&'a Generics);
 
 impl<'a> ToTokens for ImplGenerics<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let lifetime = &self.1;
         let original_generics = self.0.params.iter();
         tokens.extend(quote! {
-            <#lifetime, #(#original_generics),*>
+            <#(#original_generics),*>
         });
     }
 }
 
-fn create_generics(
-    q_life: Lifetime,
-    generics: &Generics,
-) -> (ImplGenerics<'_>, TypeGenerics<'_>, WhereClause) {
+fn create_generics(generics: &Generics) -> (ImplGenerics<'_>, TypeGenerics<'_>, WhereClause) {
     let where_clause = where_clause_with_bound(
         generics,
         quote! {
-            ::clouseau::core::Queryable<#q_life>
+            ::clouseau::core::Queryable
         },
     );
     let (_, type_generics, _) = generics.split_for_impl();
-    (ImplGenerics(generics, q_life), type_generics, where_clause)
+    (ImplGenerics(generics), type_generics, where_clause)
 }
 
 fn where_clause_with_bound(generics: &Generics, bound: TokenStream) -> WhereClause {

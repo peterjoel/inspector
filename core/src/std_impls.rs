@@ -56,11 +56,11 @@ macro_rules! value_int {
                 }
             }
 
-            impl<'a> Queryable<'a> for $ty {
+            impl Queryable for $ty {
                 fn name(&self) -> &'static str {
                     stringify!($ty)
                 }
-                fn data<'f>(&self) -> Option<Value> {
+                fn data(&self) -> Option<Value> {
                     Some((*self).into())
                 }
             }
@@ -142,7 +142,7 @@ macro_rules! value_float {
                 }
             }
 
-            impl<'a> Queryable<'a> for $ty {
+            impl Queryable for $ty {
                 fn name(&self) -> &'static str {
                     stringify!($ty)
                 }
@@ -218,7 +218,7 @@ where
 
 macro_rules! into_queryable {
     ($ty: ty) => {
-        impl<'a> Queryable<'a> for $ty {
+        impl Queryable for $ty {
             fn name(&self) -> &'static str {
                 stringify!($ty)
             }
@@ -226,7 +226,7 @@ macro_rules! into_queryable {
                 Some(self.into())
             }
         }
-        impl<'a> Queryable<'a> for &$ty {
+        impl Queryable for &$ty {
             fn name(&self) -> &'static str {
                 stringify!($ty)
             }
@@ -241,12 +241,12 @@ into_queryable!(bool);
 into_queryable!(str);
 into_queryable!(String);
 
-impl<'q, K, V> Queryable<'q> for HashMap<K, V>
+impl<K, V> Queryable for HashMap<K, V>
 where
-    K: Queryable<'q> + TryFrom<Value> + Into<Value> + Hash + Eq + Clone,
-    V: Queryable<'q>,
+    K: Queryable + TryFrom<Value> + Into<Value> + Hash + Eq + Clone,
+    V: Queryable,
 {
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable> {
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
     }
@@ -256,17 +256,17 @@ where
     fn name(&self) -> &'static str {
         "HashMap"
     }
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         NodeOrValueIter::from_queryables(self.values())
     }
 }
 
-impl<'q, K, V> Queryable<'q> for BTreeMap<K, V>
+impl<K, V> Queryable for BTreeMap<K, V>
 where
-    K: Queryable<'q> + TryFrom<Value> + Into<Value> + Clone + Ord + Eq,
-    V: Queryable<'q>,
+    K: Queryable + TryFrom<Value> + Into<Value> + Clone + Ord + Eq,
+    V: Queryable,
 {
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
         let key = K::try_from(field.clone()).ok()?;
         self.get(&key).map(|v| v as _)
     }
@@ -277,38 +277,38 @@ where
         "BTreeMap"
     }
 
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         NodeOrValueIter::from_queryables(self.values())
     }
 }
 
-impl<'q, V> Queryable<'q> for BTreeSet<V>
+impl<V> Queryable for BTreeSet<V>
 where
-    V: Queryable<'q> + Ord + Eq,
+    V: Queryable + Ord + Eq,
 {
     fn name(&self) -> &'static str {
         "BTreeSet"
     }
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         NodeOrValueIter::from_queryables(self)
     }
 }
 
-impl<'q, V> Queryable<'q> for HashSet<V>
+impl<V> Queryable for HashSet<V>
 where
-    V: Queryable<'q> + Hash + Eq,
+    V: Queryable + Hash + Eq,
 {
     fn name(&self) -> &'static str {
         "HashSet"
     }
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         NodeOrValueIter::from_queryables(self)
     }
 }
 
-impl<'q, T> Queryable<'q> for Vec<T>
+impl<T> Queryable for Vec<T>
 where
-    T: Queryable<'q>,
+    T: Queryable,
 {
     fn name(&self) -> &'static str {
         "Vec"
@@ -316,19 +316,19 @@ where
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::from_values(0..self.len())
     }
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
     }
 
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         NodeOrValueIter::from_queryables(self)
     }
 }
 
-impl<'q, T> Queryable<'q> for VecDeque<T>
+impl<T> Queryable for VecDeque<T>
 where
-    T: Queryable<'q>,
+    T: Queryable,
 {
     fn name(&self) -> &'static str {
         "VecDeque"
@@ -336,33 +336,33 @@ where
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::from_values(0..self.len())
     }
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
         let index = usize::try_from(field).ok()?;
         self.get(index).map(|v| v as _)
     }
 
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         NodeOrValueIter::from_queryables(self)
     }
 }
 
 // BinaryHeap is not conveniently queryable. However, we can still
 // enumerate all of its values, though not in a predictable order
-impl<'q, T> Queryable<'q> for BinaryHeap<T>
+impl<T> Queryable for BinaryHeap<T>
 where
-    T: Queryable<'q>,
+    T: Queryable,
 {
     fn name(&self) -> &'static str {
         "BinaryHeap"
     }
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         NodeOrValueIter::from_queryables(self)
     }
 }
 
-impl<'q, T> Queryable<'q> for Box<T>
+impl<T> Queryable for Box<T>
 where
-    T: Queryable<'q>,
+    T: Queryable,
 {
     fn name(&self) -> &'static str {
         self.as_ref().name()
@@ -370,11 +370,11 @@ where
     fn keys(&self) -> ValueIter<'_> {
         self.as_ref().keys()
     }
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
         self.as_ref().member(field)
     }
 
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         self.as_ref().all()
     }
 
@@ -394,7 +394,7 @@ where
 
 // This impl is a bit limited because Cell requires that you copy its contents which
 // won't work with Clouseau Queryable lifetimes
-impl<'q, T: Into<Value> + Copy> Queryable<'q> for Cell<T> {
+impl<T: Into<Value> + Copy> Queryable for Cell<T> {
     fn name(&self) -> &'static str {
         "Cell"
     }
@@ -415,7 +415,7 @@ where
 
 // This impl is a bit limited because RefCell contents are accessed via a Ref, and data
 // borrowed from the Ref cannot outlive the scope of the method
-impl<'q, T: Queryable<'q>> Queryable<'q> for RefCell<T> {
+impl<T: Queryable> Queryable for RefCell<T> {
     fn name(&self) -> &'static str {
         self.borrow().name()
     }
@@ -433,9 +433,9 @@ where
     }
 }
 
-impl<'q, T> Queryable<'q> for Option<T>
+impl<T> Queryable for Option<T>
 where
-    T: Queryable<'q>,
+    T: Queryable,
 {
     fn name(&self) -> &'static str {
         "Option"
@@ -447,11 +447,11 @@ where
             ValueIter::empty()
         }
     }
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
         self.as_ref().and_then(|val| val.member(field))
     }
 
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         if let Some(val) = self.as_ref() {
             val.all()
         } else {
@@ -464,9 +464,9 @@ where
     }
 }
 
-impl<'q, T, E> Queryable<'q> for Result<T, E>
+impl<T, E> Queryable for Result<T, E>
 where
-    T: Queryable<'q>,
+    T: Queryable,
 {
     fn name(&self) -> &'static str {
         "Result"
@@ -478,11 +478,11 @@ where
             ValueIter::empty()
         }
     }
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
         self.as_ref().ok().and_then(|val| val.member(field))
     }
 
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         if let Ok(val) = self.as_ref() {
             val.all()
         } else {
@@ -495,7 +495,7 @@ where
     }
 }
 
-impl<'q> Queryable<'q> for std::time::Duration {
+impl Queryable for std::time::Duration {
     fn name(&self) -> &'static str {
         "Duration"
     }
@@ -504,9 +504,9 @@ impl<'q> Queryable<'q> for std::time::Duration {
     }
 }
 
-impl<'q, T> Queryable<'q> for std::cmp::Reverse<T>
+impl<T> Queryable for std::cmp::Reverse<T>
 where
-    T: Queryable<'q>,
+    T: Queryable,
 {
     fn keys(&self) -> ValueIter<'_> {
         self.0.keys()
@@ -514,11 +514,11 @@ where
     fn name(&self) -> &'static str {
         self.0.name()
     }
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
         self.0.member(field)
     }
 
-    fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+    fn all(&self) -> NodeOrValueIter<'_> {
         self.0.all()
     }
 
@@ -553,9 +553,9 @@ macro_rules! impl_tuples {
         impl_tuples!($($other_t),* => $($other_ind),*);
     };
     (@ $($t: ident),+ ($len: tt) => $($ind: tt),+) => {
-        impl<'q $(,$t)+> Queryable<'q> for ($($t,)+)
+        impl<$($t),+> Queryable for ($($t,)+)
         where
-            $($t: Queryable<'q>),+
+            $($t: Queryable),+
         {
             fn keys(&self) -> ValueIter<'_> {
                 ValueIter::from_values(0..$len)
@@ -563,7 +563,7 @@ macro_rules! impl_tuples {
             fn name(&self) -> &'static str {
                 stringify!(($($t,)+))
             }
-            fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+            fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
                 #[allow(clippy::collapsible_match)]
                 match field {
                     Value::Int(i) => {
@@ -578,7 +578,7 @@ macro_rules! impl_tuples {
                 }
             }
 
-            fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+            fn all(&self) -> NodeOrValueIter<'_> {
                 NodeOrValueIter::from_nodes(vec![$(&self.$ind as _),+])
             }
         }
@@ -628,9 +628,9 @@ macro_rules! impl_arrays {
         impl_arrays!($($other_ind),*);
     };
     (@ $size: tt $(,$ind: tt)*) => {
-        impl<'q, T> Queryable<'q> for [T; $size]
+        impl<T> Queryable for [T; $size]
         where
-            T: Queryable<'q>
+            T: Queryable
         {
             fn keys(&self) -> ValueIter<'_> {
                 ValueIter::from_values(0..$size)
@@ -638,7 +638,7 @@ macro_rules! impl_arrays {
             fn name(&self) -> &'static str {
                 stringify!([T; $size])
             }
-            fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable<'q>> {
+            fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
                 #[allow(clippy::collapsible_match)]
                 match field {
                     Value::Int(i) => {
@@ -653,7 +653,7 @@ macro_rules! impl_arrays {
                 }
             }
 
-            fn all<'a>(&'a self) -> NodeOrValueIter<'a, 'q> {
+            fn all(&self) -> NodeOrValueIter<'_> {
                 NodeOrValueIter::from_nodes(vec![$(&self[$ind] as _),*])
             }
         }
@@ -693,7 +693,7 @@ impl_arrays!(
     8, 7, 6, 5, 4, 3, 2, 1, 0
 );
 
-impl<'a, T> Queryable<'a> for PhantomData<T> {
+impl<T> Queryable for PhantomData<T> {
     fn name(&self) -> &'static str {
         "PhantomData"
     }

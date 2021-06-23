@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 use uuid::Uuid;
 
-impl<'a> Queryable<'a> for Uuid {
+impl Queryable for Uuid {
     fn name(&self) -> &'static str {
         "Uuid"
     }
