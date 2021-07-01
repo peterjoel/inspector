@@ -4,15 +4,20 @@ use pest::error::Error as PestError;
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
-use std::rc::Rc;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Parse error: {0}")]
     Parse(#[from] PestError<Rule>),
-    #[error("Parse error: Pest says this should be impossible!")]
-    Pest,
+    #[error("Unexpected rule {1:?} in {0:?}. This is probably a bug!")]
+    UnexpectedRule(Rule, Rule),
+    #[error("Expected {1:?} rule in {0:?}. This is probably a bug!")]
+    ExpectedRule(Rule, Rule),
+    #[error("Expected child rule in {0:?}. This is probably a bug!")]
+    ExpectedChildRule(Rule),
+    #[error("Unexpected input {1} in rule {0:?}. This is probably a bug!")]
+    UnexpectedInput(Rule, String),
     #[error("Parse error: {0}")]
     Integer(#[from] std::num::ParseIntError),
 }
@@ -26,9 +31,11 @@ pub struct QueryParser;
 pub fn parse_query(input: &str) -> Result<Query> {
     let ast = QueryParser::parse(Rule::query, input)?
         .next()
-        .ok_or(Error::Pest)?;
+        .ok_or(Error::ExpectedChildRule(Rule::query))?;
     Ok(Query::new(parse_path(
-        ast.into_inner().next().ok_or(Error::Pest)?,
+        ast.into_inner()
+            .next()
+            .ok_or(Error::ExpectedRule(Rule::query, Rule::path))?,
     )?))
 }
 
@@ -39,68 +46,88 @@ fn parse_path(pair: Pair<Rule>) -> Result<Path> {
             Rule::absolute => path.add_selector(Selector::Segment(Segment::Root)),
             Rule::relative => path.add_selector(Selector::Segment(Segment::Current)),
             Rule::selector => path.add_selector(parse_selector(pair)?),
-            _ => return Err(Error::Pest),
+            eh => return Err(Error::UnexpectedRule(Rule::path, eh)),
         }
     }
     Ok(path)
 }
 
 fn parse_selector(pair: Pair<Rule>) -> Result<Selector> {
-    let pair = pair.into_inner().next().ok_or(Error::Pest)?;
+    let pair = pair
+        .into_inner()
+        .next()
+        .ok_or(Error::ExpectedChildRule(Rule::selector))?;
     match pair.as_rule() {
         Rule::segment => Ok(Selector::Segment(parse_segment(pair)?)),
         Rule::filter => Ok(Selector::Filter(parse_filter(pair)?)),
         Rule::call => Ok(Selector::Call(parse_call(pair)?)),
-        _ => Err(Error::Pest),
+        wtf => Err(Error::UnexpectedRule(Rule::selector, wtf)),
     }
 }
 
 fn parse_var(pair: Pair<Rule>) -> Result<String> {
-    let var = pair.into_inner().next().ok_or(Error::Pest)?;
+    let var = pair
+        .into_inner()
+        .next()
+        .ok_or(Error::ExpectedChildRule(Rule::var))?;
     let tokens = var.as_str();
     let rule = var.as_rule();
     match rule {
         Rule::ident => Ok(tokens.to_string()),
-        _ => Err(Error::Pest),
+        umm => Err(Error::UnexpectedRule(Rule::var, umm)),
     }
 }
 
 fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
-    let pair = pair.into_inner().next().ok_or(Error::Pest)?;
+    let pair = pair
+        .into_inner()
+        .next()
+        .ok_or(Error::ExpectedChildRule(Rule::segment))?;
     match pair.as_rule() {
         Rule::wildcard => Ok(Segment::Children),
         Rule::descendants => Ok(Segment::Descendants),
         Rule::ident | Rule::integer => Ok(Segment::Child(pair.as_str().into())),
-        Rule::literal => Ok(Segment::Child(parse_value(pair)?)),
-        _ => Err(Error::Pest),
+        Rule::literal => Ok(Segment::Child(parse_literal(pair)?)),
+        what_the_ => Err(Error::UnexpectedRule(Rule::segment, what_the_)),
     }
 }
 
 fn parse_call(pair: Pair<Rule>) -> Result<Call> {
-    let pair = pair.into_inner().next().ok_or(Error::Pest)?;
+    let pair = pair
+        .into_inner()
+        .next()
+        .ok_or(Error::ExpectedChildRule(Rule::call))?;
     let name = pair.as_str().to_string();
     let rule = pair.as_rule();
     match rule {
         Rule::ident => Ok(Call::new(name)),
-        _ => Err(Error::Pest),
+        eh => Err(Error::UnexpectedRule(Rule::call, eh)),
     }
 }
 
 fn parse_filter(pair: Pair<Rule>) -> Result<Pred> {
     let mut parts = pair.into_inner();
-    let path = parse_path(parts.next().ok_or(Error::Pest)?)?;
-    let (match_type, pred) = parse_operator(parts.next().ok_or(Error::Pest)?)?;
+    let path = parse_path(
+        parts
+            .next()
+            .ok_or(Error::ExpectedRule(Rule::filter, Rule::path))?,
+    )?;
+    let (match_type, pred) = parse_operator(
+        parts
+            .next()
+            .ok_or(Error::ExpectedRule(Rule::filter, Rule::op_compare))?,
+    )?;
     let op_rhs = parts
         .next()
-        .ok_or(Error::Pest)?
+        .ok_or(Error::ExpectedChildRule(Rule::filter))?
         .into_inner()
         .next()
-        .ok_or(Error::Pest)?;
+        .ok_or(Error::ExpectedRule(Rule::filter, Rule::op_rhs))?;
     let rhs = match op_rhs.as_rule() {
-        Rule::literal => OperatorRhs::Value(parse_value(op_rhs)?),
+        Rule::literal => OperatorRhs::Value(parse_literal(op_rhs)?),
         Rule::path => OperatorRhs::Path(parse_path(op_rhs)?),
         Rule::var => OperatorRhs::Var(parse_var(op_rhs)?),
-        _ => return Err(Error::Pest),
+        what_on_earth => return Err(Error::UnexpectedRule(Rule::op_rhs, what_on_earth)),
     };
     Ok(Pred::new(path, pred, rhs, match_type))
 }
@@ -120,30 +147,38 @@ fn parse_operator(pair: Pair<Rule>) -> Result<(MatchType, Compare)> {
         "?<=" => Ok((Any, Compare::LessThanEq)),
         "?=" => Ok((Any, Compare::Eq)),
         "?!=" => Ok((Any, Compare::Neq)),
-        _ => Err(Error::Pest),
+        just_why => Err(Error::UnexpectedInput(
+            Rule::op_compare,
+            just_why.to_string(),
+        )),
     }
 }
 
-fn parse_value(pair: Pair<Rule>) -> Result<Value> {
+fn parse_literal(pair: Pair<Rule>) -> Result<Value> {
     let tokens = pair.as_str();
-    let value = pair.into_inner().next().ok_or(Error::Pest)?;
+    let value = pair
+        .into_inner()
+        .next()
+        .ok_or(Error::ExpectedChildRule(Rule::literal))?;
     match value.as_rule() {
         Rule::integer => Ok(Value::Int(tokens.parse()?)),
         Rule::string => Ok(Value::String(tokens[1..tokens.len() - 1].to_string())),
         Rule::bool => match tokens {
             "true" => Ok(Value::Bool(true)),
             "false" => Ok(Value::Bool(false)),
-            _ => Err(Error::Pest),
+            umm => Err(Error::UnexpectedInput(Rule::bool, umm.to_string())),
         },
         Rule::array => Ok(Value::Array(parse_array(value)?)),
-        _ => Err(Error::Pest),
+        what => Err(Error::UnexpectedRule(Rule::literal, what)),
     }
 }
 
 fn parse_array(pair: Pair<Rule>) -> Result<Array> {
-    let mut values = vec![];
-    for pair in pair.into_inner() {
-        values.push(parse_value(pair)?);
-    }
-    Ok(Array(Rc::from(values.into_boxed_slice())))
+    Ok(Array(
+        pair.into_inner()
+            .map(parse_literal)
+            .collect::<Result<Vec<_>, _>>()?
+            .into_boxed_slice()
+            .into(),
+    ))
 }
