@@ -97,7 +97,7 @@ pub enum Selector {
 pub enum Segment {
     Root,
     Current,
-    Child(Value),
+    Child(KeyExpr),
     Children,
     Descendants,
 }
@@ -140,6 +140,12 @@ pub enum Compare {
     Neq,
     GreaterThan,
     GreaterThanEq,
+}
+
+#[derive(Debug)]
+pub enum KeyExpr {
+    Literal(Value),
+    Var(String),
 }
 
 impl Query {
@@ -230,8 +236,17 @@ impl Segment {
         if let NodeOrValue::Node(q) = node_or_value {
             match self {
                 Self::Child(s) => {
-                    if let Some(q) = q.member(s) {
-                        NodeOrValueIter::one_node(q)
+                    if let Some(member) = match s {
+                        KeyExpr::Literal(value) => q.member(value),
+                        KeyExpr::Var(name) => {
+                            if let Some(value) = ctx.var(name) {
+                                q.member(&value)
+                            } else {
+                                return NodeOrValueIter::one(Err(Error::VarNotFound));
+                            }
+                        }
+                    } {
+                        NodeOrValueIter::one_node(member)
                     } else {
                         NodeOrValueIter::empty()
                     }

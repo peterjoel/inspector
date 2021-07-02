@@ -59,6 +59,7 @@ fn parse_selector(pair: Pair<Rule>) -> Result<Selector> {
         .ok_or(Error::ExpectedChildRule(Rule::selector))?;
     match pair.as_rule() {
         Rule::segment => Ok(Selector::Segment(parse_segment(pair)?)),
+        Rule::explicit_key => Ok(Selector::Segment(parse_explicit_key(pair)?)),
         Rule::filter => Ok(Selector::Filter(parse_filter(pair)?)),
         Rule::call => Ok(Selector::Call(parse_call(pair)?)),
         wtf => Err(Error::UnexpectedRule(Rule::selector, wtf)),
@@ -86,9 +87,28 @@ fn parse_segment(pair: Pair<Rule>) -> Result<Segment> {
     match pair.as_rule() {
         Rule::wildcard => Ok(Segment::Children),
         Rule::descendants => Ok(Segment::Descendants),
-        Rule::ident | Rule::integer => Ok(Segment::Child(pair.as_str().into())),
-        Rule::literal => Ok(Segment::Child(parse_literal(pair)?)),
+        Rule::ident | Rule::integer => Ok(Segment::Child(KeyExpr::Literal(pair.as_str().into()))),
         what_the_ => Err(Error::UnexpectedRule(Rule::segment, what_the_)),
+    }
+}
+
+fn parse_explicit_key(pair: Pair<Rule>) -> Result<Segment> {
+    let pair = pair
+        .into_inner()
+        .next()
+        .ok_or(Error::ExpectedChildRule(Rule::explicit_key))?;
+    Ok(Segment::Child(parse_key_expr(pair)?))
+}
+
+fn parse_key_expr(pair: Pair<Rule>) -> Result<KeyExpr> {
+    let pair = pair
+        .into_inner()
+        .next()
+        .ok_or(Error::ExpectedChildRule(Rule::key_expr))?;
+    match pair.as_rule() {
+        Rule::literal => Ok(KeyExpr::Literal(parse_literal(pair)?)),
+        Rule::var => Ok(KeyExpr::Var(parse_var(pair)?)),
+        unexpected => Err(Error::UnexpectedRule(Rule::key_expr, unexpected)),
     }
 }
 

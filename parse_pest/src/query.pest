@@ -2,10 +2,12 @@ query = { SOI ~ path ~ EOI }
 path = {
     (absolute | selector | relative) ~ selector*
 }
-selector = { segment | filter | call }
+selector = { segment | filter | explicit_key | call }
 absolute = @{ &"/" }
 relative = @{ "." ~ !"." }
-segment = { "/" ~ (descendants | wildcard | "key:" ~ literal | ident | integer) }
+explicit_key = { ".key(" ~ key_expr ~ ")" }
+segment = { "/" ~ (descendants | wildcard | ident | integer) }
+key_expr = { literal | var }
 wildcard = @{ "*" }
 descendants = @{ "**" }
 filter = { "[" ~ path ~ op_compare ~ op_rhs ~ "]" }
