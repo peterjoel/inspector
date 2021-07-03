@@ -1,19 +1,19 @@
 [package]
 name = "clouseau_cli"
-version = "0.3.4"
+version = "0.3.5"
 authors = ["Peter Hall <peterjoel@gmail.com>"]
 edition = "2018"
 license = "MIT"
 description = "Interactive CLI lib for clouseau queries"
 
 [dependencies]
-clouseau_core = { path = "../core", version = "0.3.4" }
-clouseau_query = { path = "../query", version = "0.3.4" }
-clouseau_pest = { path = "../parse_pest", version = "0.3.4" }
+clouseau_core = { path = "../core", version = "0.3.5" }
+clouseau_query = { path = "../query", version = "0.3.5" }
+clouseau_pest = { path = "../parse_pest", version = "0.3.5" }
 directories = "3"
 itertools = "0.10"
 termion = "1.5"
 
 [dev-dependencies]
-clouseau = { path = "..", version = "0.3.4" }
+clouseau = { path = "..", version = "0.3.5" }
 velcro = "0.5"

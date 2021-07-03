@@ -55,7 +55,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "clouseau"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "clouseau_core",
  "clouseau_macros",
@@ -67,7 +67,7 @@ dependencies = [
 
 [[package]]
 name = "clouseau_cli"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "clouseau",
  "clouseau_core",
@@ -81,7 +81,7 @@ dependencies = [
 
 [[package]]
 name = "clouseau_core"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "arrayvec",
  "thiserror",
@@ -90,7 +90,7 @@ dependencies = [
 
 [[package]]
 name = "clouseau_macros"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -100,7 +100,7 @@ dependencies = [
 
 [[package]]
 name = "clouseau_pest"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "clouseau_core",
  "clouseau_query",
@@ -112,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "clouseau_query"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "clouseau_core",
  "itertools",
