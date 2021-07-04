@@ -93,6 +93,7 @@ name = "clouseau_macros"
 version = "0.3.5"
 dependencies = [
  "darling",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn",

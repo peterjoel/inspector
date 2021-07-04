@@ -1,18 +1,19 @@
 use darling::{
-    ast::{Data, Fields, Style},
-    Error, FromDeriveInput, Result,
+    ast::{self, Data, Style},
+    Error, FromDeriveInput, FromField, Result,
 };
+use itertools::Either::*;
 use proc_macro2::{Literal, TokenStream};
 use quote::{quote, ToTokens};
-use std::iter::Extend;
+use std::iter::{self, Extend};
 use syn::{
-    parse_macro_input, parse_quote, spanned::Spanned, DeriveInput, Field, Generics, Ident, Path,
+    parse_macro_input, parse_quote, spanned::Spanned, DeriveInput, Generics, Ident, Path,
     TypeGenerics, Variant, WhereClause, WherePredicate,
 };
 
 #[derive(FromDeriveInput)]
 #[darling(attributes(clouseau))]
-pub(crate) struct ClouseauDeriveInput {
+struct ClouseauDeriveInput {
     #[darling(default, rename = "value")]
     is_value: bool,
     #[darling(default, rename = "as")]
@@ -22,6 +23,94 @@ pub(crate) struct ClouseauDeriveInput {
     generics: Generics,
     ident: Ident,
     data: Data<Variant, Field>,
+}
+
+#[derive(Debug, FromField)]
+#[darling(attributes(clouseau))]
+struct Field {
+    #[darling(default)]
+    skip: bool,
+    ident: Option<syn::Ident>,
+    ty: syn::Type,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct StructFields<'f>(&'f ast::Fields<Field>);
+
+#[derive(Copy, Clone, Debug)]
+struct TupleFields<'f>(&'f ast::Fields<Field>);
+
+#[derive(Copy, Clone, Debug)]
+enum Fields<'f> {
+    Tuple(TupleFields<'f>),
+    Struct(StructFields<'f>),
+    Unit,
+}
+
+impl<'f> From<&'f ast::Fields<Field>> for Fields<'f> {
+    fn from(fields: &'f ast::Fields<Field>) -> Self {
+        match fields.style {
+            Style::Tuple => Fields::Tuple(TupleFields(fields)),
+            Style::Struct => Fields::Struct(StructFields(fields)),
+            Style::Unit => Fields::Unit,
+        }
+    }
+}
+
+impl<'f> Fields<'f> {
+    fn len(&self) -> usize {
+        match self {
+            Fields::Tuple(fields) => fields.len(),
+            Fields::Struct(fields) => fields.len(),
+            Fields::Unit => 0,
+        }
+    }
+}
+
+impl<'f> StructFields<'f> {
+    fn fields(&self) -> impl Iterator<Item = &'f Field> + 'f {
+        match self.0 {
+            ast::Fields {
+                style: Style::Struct,
+                fields,
+                ..
+            } => Left(fields.iter().filter(|field| !field.skip)),
+            _ => Right(iter::empty()),
+        }
+    }
+
+    fn names(&self) -> impl Iterator<Item = &'f syn::Ident> + 'f {
+        self.fields().filter_map(|field| field.ident.as_ref())
+    }
+
+    fn len(&self) -> usize {
+        self.fields().count()
+    }
+}
+
+impl<'f> TupleFields<'f> {
+    fn indexed_fields(&self) -> impl Iterator<Item = (usize, &'f Field)> + 'f {
+        match &self.0 {
+            ast::Fields {
+                style: Style::Tuple,
+                fields,
+                ..
+            } => Left(fields.iter().enumerate().filter(|(_, field)| !field.skip)),
+            _ => Right(iter::empty()),
+        }
+    }
+
+    fn indices(&self) -> impl Iterator<Item = usize> + 'f {
+        self.indexed_fields().map(|(index, _)| index)
+    }
+
+    fn fields(&self) -> impl Iterator<Item = &'f Field> + 'f {
+        self.indexed_fields().map(|(_, field)| field)
+    }
+
+    fn len(&self) -> usize {
+        self.indexed_fields().count()
+    }
 }
 
 #[proc_macro_derive(Queryable, attributes(clouseau))]
@@ -43,13 +132,16 @@ fn impl_queryable(input: ClouseauDeriveInput) -> Result<TokenStream> {
     let name = &input.ident;
     let (impl_generics, type_generics, where_clause) = create_generics(&input.generics);
     let (member_body, all_body, data_body, keys_body, value_impls) = match &input.data {
-        Data::Struct(data) => (
-            struct_member_body(data, input.transparent)?,
-            struct_all_body(data, input.transparent)?,
-            struct_data_body(data, input.transparent, input.is_value)?,
-            struct_keys_body(data, input.transparent)?,
-            impl_to_from_value(name, data, input.is_value, input.value_as.as_ref())?,
-        ),
+        Data::Struct(data) => {
+            let fields = data.into();
+            (
+                struct_member_body(fields, input.transparent)?,
+                struct_all_body(fields, input.transparent)?,
+                struct_data_body(fields, input.transparent, input.is_value)?,
+                struct_keys_body(fields, input.transparent)?,
+                impl_to_from_value(name, fields, input.is_value, input.value_as.as_ref())?,
+            )
+        }
         Data::Enum(data) => {
             if input.transparent {
                 return Err(Error::custom("`transparent` is not supported in enums"));
@@ -122,21 +214,21 @@ fn where_clause_with_bound(generics: &Generics, bound: TokenStream) -> WhereClau
     generics.where_clause.unwrap()
 }
 
-fn struct_member_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStream> {
-    match data.style {
-        Style::Tuple => {
-            if data.fields.len() == 1 && transparent {
+fn struct_member_body(data: Fields, transparent: bool) -> Result<TokenStream> {
+    match data {
+        Fields::Tuple(fields) => {
+            if fields.len() == 1 && transparent {
                 Ok(quote! { self.0.member(field_name) })
             } else {
-                let indices = (0..data.fields.len() as i64).map(Literal::i64_unsuffixed);
-                let indices2 = (0..data.fields.len()).map(Literal::usize_unsuffixed);
+                let indices_int = fields.indices().map(|i| Literal::i64_unsuffixed(i as i64));
+                let indices_str = fields.indices().map(Literal::usize_unsuffixed);
                 Ok(quote! {
                     match field_name {
                         #(
-                            ::clouseau::core::Value::Int(#indices) => { Some(&self.#indices as _) },
+                            ::clouseau::core::Value::Int(#indices_int) => { Some(&self.#indices_int as _) },
                         )*
                         ::clouseau::core::Value::String(s) => match s.parse::<usize>() {
-                            #(Ok(#indices2) => Some(&self.#indices2 as _),)*
+                            #(Ok(#indices_str) => Some(&self.#indices_str as _),)*
                             _ => None,
                         }
                         _ => None,
@@ -144,12 +236,12 @@ fn struct_member_body(data: &Fields<Field>, transparent: bool) -> Result<TokenSt
                 })
             }
         }
-        Style::Struct => {
-            if data.fields.len() == 1 && transparent {
-                let name = &data.fields[0].ident;
+        Fields::Struct(fields) => {
+            if fields.len() == 1 && transparent {
+                let name = fields.names().next().unwrap();
                 Ok(quote! { self.#name.member(field_name) })
             } else {
-                let names = data.fields.iter().filter_map(|named| named.ident.as_ref());
+                let names = fields.names();
                 Ok(quote! {
                     match field_name {
                         ::clouseau::core::Value::String(s) => {
@@ -163,7 +255,7 @@ fn struct_member_body(data: &Fields<Field>, transparent: bool) -> Result<TokenSt
                 })
             }
         }
-        Style::Unit => {
+        Fields::Unit => {
             if transparent {
                 Err(Error::custom(
                     "transparent is only supported in structs with one field",
@@ -175,11 +267,11 @@ fn struct_member_body(data: &Fields<Field>, transparent: bool) -> Result<TokenSt
     }
 }
 
-fn struct_all_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStream> {
-    match data.style {
-        Style::Tuple => {
+fn struct_all_body(data: Fields, transparent: bool) -> Result<TokenStream> {
+    match data {
+        Fields::Tuple(fields) => {
             if transparent {
-                if data.fields.len() == 1 {
+                if fields.len() == 1 {
                     Ok(quote! {
                         self.0.all()
                     })
@@ -189,16 +281,18 @@ fn struct_all_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStrea
                     ))
                 }
             } else {
-                let indices = (0..data.fields.len() as i64).map(Literal::i64_unsuffixed);
+                let indices = fields
+                    .indices()
+                    .map(|index| Literal::i64_unsuffixed(index as i64));
                 Ok(quote! {
                     ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(&self.#indices as _),*])
                 })
             }
         }
-        Style::Struct => {
+        Fields::Struct(fields) => {
             if transparent {
-                if data.fields.len() == 1 {
-                    let name = &data.fields[0].ident;
+                if fields.len() == 1 {
+                    let name = fields.names().next().unwrap();
                     Ok(quote! {
                         self.#name.all()
                     })
@@ -208,13 +302,13 @@ fn struct_all_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStrea
                     ))
                 }
             } else {
-                let names = data.fields.iter().filter_map(|named| named.ident.as_ref());
+                let names = fields.names();
                 Ok(quote! {
                     ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(&self.#names as _),*])
                 })
             }
         }
-        Style::Unit => {
+        Fields::Unit => {
             if transparent {
                 Err(Error::custom(
                     "transparent is only supported in structs with one field",
@@ -228,11 +322,11 @@ fn struct_all_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStrea
     }
 }
 
-fn struct_keys_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStream> {
-    match data.style {
-        Style::Tuple => {
+fn struct_keys_body(data: Fields, transparent: bool) -> Result<TokenStream> {
+    match data {
+        Fields::Tuple(fields) => {
             if transparent {
-                if data.fields.len() == 1 {
+                if fields.len() == 1 {
                     Ok(quote! {
                         self.0.keys()
                     })
@@ -242,16 +336,16 @@ fn struct_keys_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStre
                     ))
                 }
             } else {
-                let len = data.fields.len();
+                let indices = fields.indices();
                 Ok(quote! {
-                    ::clouseau::core::ValueIter::from_values(0..#len)
+                    ::clouseau::core::ValueIter::from_values(vec![#(#indices),*])
                 })
             }
         }
-        Style::Struct => {
+        Fields::Struct(fields) => {
             if transparent {
-                if data.fields.len() == 1 {
-                    let name = &data.fields[0].ident;
+                if fields.len() == 1 {
+                    let name = fields.names().next().unwrap();
                     Ok(quote! {
                         self.#name.keys()
                     })
@@ -261,13 +355,13 @@ fn struct_keys_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStre
                     ))
                 }
             } else {
-                let names = data.fields.iter().filter_map(|named| named.ident.as_ref());
+                let names = fields.names();
                 Ok(quote! {
                     ::clouseau::core::ValueIter::from_values(vec![#(stringify!(#names)),*])
                 })
             }
         }
-        Style::Unit => {
+        Fields::Unit => {
             if transparent {
                 Err(Error::custom(
                     "transparent is only supported in structs with one field",
@@ -281,24 +375,22 @@ fn struct_keys_body(data: &Fields<Field>, transparent: bool) -> Result<TokenStre
     }
 }
 
-fn struct_data_body(
-    data: &Fields<Field>,
-    transparent: bool,
-    is_value: bool,
-) -> Result<TokenStream> {
+fn struct_data_body(data: Fields, transparent: bool, is_value: bool) -> Result<TokenStream> {
     if is_value {
         return Ok(quote! { Some(Value::from(self.clone()))});
     }
-    if data.fields.len() == 1 && transparent {
-        match data.style {
-            Style::Tuple => Ok(quote! { self.0.data() }),
-            // Style::Tuple => Ok(quote! { Some(std::clone::Clone::clone(&self.0).into()) }),
-            Style::Struct => {
-                let name = &data.fields[0];
-                Ok(quote! { self.#name.data() })
-                // Ok(quote! { Some(std::clone::Clone::clone(&self.#name).into()) })
+
+    if data.len() == 1 && transparent {
+        match data {
+            Fields::Tuple(fields) => {
+                let index = Literal::usize_unsuffixed(fields.indices().next().unwrap());
+                Ok(quote! { self.#index.data() })
             }
-            Style::Unit => unreachable!(),
+            Fields::Struct(fields) => {
+                let name = fields.names().next().unwrap();
+                Ok(quote! { self.#name.data() })
+            }
+            Fields::Unit => unreachable!(),
         }
     } else if transparent {
         Err(Error::unsupported_shape(
@@ -461,7 +553,7 @@ fn enum_data_body(data: &[Variant]) -> Result<TokenStream> {
 
 fn impl_to_from_value(
     name: &Ident,
-    data: &Fields<Field>,
+    data: Fields,
     is_value: bool,
     value_as: Option<&Path>,
 ) -> Result<TokenStream> {
@@ -484,10 +576,11 @@ fn impl_to_from_value(
                 }
             });
         } else {
-            match data.style {
-                Style::Struct if data.fields.len() == 1 => {
-                    let ty = &data.fields[0].ty;
-                    let ident = &data.fields[0].ident;
+            match data {
+                Fields::Struct(fields) if fields.len() == 1 => {
+                    let field = fields.fields().next().unwrap();
+                    let ty = &field.ty;
+                    let ident = field.ident.as_ref().unwrap();
                     return Ok(quote! {
                         impl std::convert::TryFrom<::clouseau::core::Value> for #name {
                             type Error = clouseau::core::Error;
@@ -503,8 +596,8 @@ fn impl_to_from_value(
                         }
                     });
                 }
-                Style::Tuple if data.fields.len() == 1 => {
-                    let ty = &data.fields[0].ty;
+                Fields::Tuple(fields) if fields.len() == 1 => {
+                    let ty = &fields.fields().next().unwrap().ty;
                     return Ok(quote! {
                         impl std::convert::TryFrom<::clouseau::core::Value> for #name {
                             type Error = <#ty as std::convert::TryFrom<::clouseau::core::Value>>::Error;
