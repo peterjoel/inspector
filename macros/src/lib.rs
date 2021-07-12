@@ -1,6 +1,6 @@
 use darling::{
     ast::{self, Data, Style},
-    Error, FromDeriveInput, FromField, Result,
+    Error, FromDeriveInput, FromField, FromMeta, Result,
 };
 use itertools::Either::*;
 use proc_macro2::{Literal, TokenStream};
@@ -20,9 +20,17 @@ struct ClouseauDeriveInput {
     value_as: Option<Path>,
     #[darling(default)]
     transparent: bool,
+    #[darling(multiple)]
+    accessor: Vec<Accessor>,
     generics: Generics,
     ident: Ident,
     data: Data<Variant, Field>,
+}
+
+#[derive(Debug, Clone, FromMeta)]
+struct Accessor {
+    name: Ident,
+    getter: Path,
 }
 
 #[derive(Debug, FromField)]
@@ -126,10 +134,22 @@ pub fn derive_queryable(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
 impl ClouseauDeriveInput {
     fn impl_queryable(self) -> Result<TokenStream> {
-        if self.transparent && self.value_as.is_some() {
-            return Err(Error::custom(
-                "`transparent` and `value` may not be specified together",
-            ));
+        if self.transparent {
+            if self.value_as.is_some() {
+                return Err(Error::custom(
+                    "`transparent` and `value` may not be specified together",
+                ));
+            } else if self.accessor.len() > 0 {
+                return Err(Error::custom(
+                    "`transparent` and `accessor` may not be specified together",
+                ));
+            } else if let Data::Enum(..) = &self.data {
+                return Err(Error::custom("`transparent` is not supported in enums"));
+            } else if self.num_fields() != 1 {
+                return Err(Error::custom(
+                    "`transparent` can only be used with structs with one field (excluding skipped fields)",
+                ));
+            }
         }
         let name = &self.ident;
         let (impl_generics, type_generics, where_clause) = create_generics(&self.generics);
@@ -145,18 +165,14 @@ impl ClouseauDeriveInput {
                 )
             }
             Data::Enum(data) => {
-                if self.transparent {
-                    return Err(Error::custom("`transparent` is not supported in enums"));
-                } else {
-                    let impl_enum = ImplEnum::new(&self, &*data);
-                    (
-                        impl_enum.member_body()?,
-                        impl_enum.all_body()?,
-                        impl_enum.data_body()?,
-                        impl_enum.keys_body()?,
-                        TokenStream::new(),
-                    )
-                }
+                let impl_enum = ImplEnum::new(&self, &*data);
+                (
+                    impl_enum.member_body()?,
+                    impl_enum.all_body()?,
+                    impl_enum.data_body()?,
+                    impl_enum.keys_body()?,
+                    TokenStream::new(),
+                )
             }
         };
         Ok(quote! {
@@ -179,6 +195,13 @@ impl ClouseauDeriveInput {
             }
             #value_impls
         })
+    }
+
+    fn num_fields(&self) -> usize {
+        match &self.data {
+            Data::Struct(data) => Fields::from(data).len(),
+            Data::Enum(data) => data.len(),
+        }
     }
 }
 
@@ -230,9 +253,16 @@ impl<'a> ImplStruct<'a> {
     }
 
     fn member_body(self) -> Result<TokenStream> {
+        let accessor_names = self.input.accessor.iter().map(|accessor| &accessor.name);
+        let accessor_getters = self.input.accessor.iter().map(|accessor| &accessor.getter);
+        let accessor_arms = quote! {
+            #(
+                stringify!(#accessor_names) => Some(#accessor_getters(&self) as _),
+            )*
+        };
         match self.fields {
             Fields::Tuple(fields) => {
-                if fields.len() == 1 && self.input.transparent {
+                if self.input.transparent {
                     Ok(quote! { self.0.member(field_name) })
                 } else {
                     let indices_int = fields.indices().map(|i| Literal::i64_unsuffixed(i as i64));
@@ -242,9 +272,12 @@ impl<'a> ImplStruct<'a> {
                             #(
                                 ::clouseau::core::Value::Int(#indices_int) => { Some(&self.#indices_int as _) },
                             )*
-                            ::clouseau::core::Value::String(s) => match s.parse::<usize>() {
-                                #(Ok(#indices_str) => Some(&self.#indices_str as _),)*
-                                _ => None,
+                            ::clouseau::core::Value::String(s) => match s.as_str() {
+                                #accessor_arms
+                                _ => match s.parse::<usize>() {
+                                    #(Ok(#indices_str) => Some(&self.#indices_str as _),)*
+                                    _ => None,
+                                }
                             }
                             _ => None,
                         }
@@ -252,7 +285,7 @@ impl<'a> ImplStruct<'a> {
                 }
             }
             Fields::Struct(fields) => {
-                if fields.len() == 1 && self.input.transparent {
+                if self.input.transparent {
                     let name = fields.names().next().unwrap();
                     Ok(quote! { self.#name.member(field_name) })
                 } else {
@@ -261,6 +294,7 @@ impl<'a> ImplStruct<'a> {
                         match field_name {
                             ::clouseau::core::Value::String(s) => {
                                 match s.as_str() {
+                                    #accessor_arms
                                     #(stringify!(#names) => Some(&self.#names as _),)*
                                     _ => None,
                                 }
@@ -270,123 +304,103 @@ impl<'a> ImplStruct<'a> {
                     })
                 }
             }
-            Fields::Unit => {
-                if self.input.transparent {
-                    Err(Error::custom(
-                        "transparent is only supported in structs with one field",
-                    ))
-                } else {
-                    Ok(TokenStream::new())
+            Fields::Unit => Ok(quote! {
+                match field_name {
+                    ::clouseau::core::Value::String(s) => {
+                        match s.as_str() {
+                            #accessor_arms
+                            _ => None,
+                        }
+                    }
+                    _ => None,
                 }
-            }
+            }),
         }
     }
 
     fn all_body(self) -> Result<TokenStream> {
+        let accessor_getters = self.input.accessor.iter().map(|accessor| &accessor.getter);
         match self.fields {
             Fields::Tuple(fields) => {
                 if self.input.transparent {
-                    if fields.len() == 1 {
-                        Ok(quote! {
-                            self.0.all()
-                        })
-                    } else {
-                        Err(Error::unsupported_shape(
-                            "transparent may only be used with structs with one field",
-                        ))
-                    }
+                    Ok(quote! {
+                        self.0.all()
+                    })
                 } else {
                     let indices = fields
                         .indices()
                         .map(|index| Literal::i64_unsuffixed(index as i64));
                     Ok(quote! {
-                        ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(&self.#indices as _),*])
+                        ::clouseau::core::NodeOrValueIter::from_nodes(vec![
+                            #(#accessor_getters(&self) as _,)*
+                            #(&self.#indices as _),*
+                        ])
                     })
                 }
             }
             Fields::Struct(fields) => {
                 if self.input.transparent {
-                    if fields.len() == 1 {
-                        let name = fields.names().next().unwrap();
-                        Ok(quote! {
-                            self.#name.all()
-                        })
-                    } else {
-                        Err(Error::unsupported_shape(
-                            "transparent may only be used with structs with one field",
-                        ))
-                    }
+                    let name = fields.names().next().unwrap();
+                    Ok(quote! {
+                        self.#name.all()
+                    })
                 } else {
                     let names = fields.names();
                     Ok(quote! {
-                        ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(&self.#names as _),*])
+                        ::clouseau::core::NodeOrValueIter::from_nodes(vec![
+                            #(#accessor_getters(&self) as _,)*
+                            #(&self.#names as _),*
+                        ])
                     })
                 }
             }
-            Fields::Unit => {
-                if self.input.transparent {
-                    Err(Error::custom(
-                        "transparent is only supported in structs with one field",
-                    ))
-                } else {
-                    Ok(quote! {
-                        ::clouseau::core::NodeOrValueIter::empty()
-                    })
-                }
-            }
+            Fields::Unit => Ok(quote! {
+                ::clouseau::core::NodeOrValueIter::from_nodes(vec![
+                    #(#accessor_getters(&self)),*
+                ])
+            }),
         }
     }
 
     fn keys_body(self) -> Result<TokenStream> {
+        let accessor_names = self.input.accessor.iter().map(|accessor| &accessor.name);
         match self.fields {
             Fields::Tuple(fields) => {
                 if self.input.transparent {
-                    if fields.len() == 1 {
-                        Ok(quote! {
-                            self.0.keys()
-                        })
-                    } else {
-                        Err(Error::custom(
-                            "transparent is only supported in structs with one field",
-                        ))
-                    }
+                    Ok(quote! {
+                        self.0.keys()
+                    })
                 } else {
                     let indices = fields.indices();
                     Ok(quote! {
-                        ::clouseau::core::ValueIter::from_values(vec![#(#indices),*])
+                        ::clouseau::core::ValueIter::from_values(vec![
+                            #(stringify!(#accessor_names),)*
+                            #(#indices),*
+                        ])
                     })
                 }
             }
             Fields::Struct(fields) => {
                 if self.input.transparent {
-                    if fields.len() == 1 {
-                        let name = fields.names().next().unwrap();
-                        Ok(quote! {
-                            self.#name.keys()
-                        })
-                    } else {
-                        Err(Error::custom(
-                            "transparent is only supported in structs with one field",
-                        ))
-                    }
+                    let name = fields.names().next().unwrap();
+                    Ok(quote! {
+                        self.#name.keys()
+                    })
                 } else {
                     let names = fields.names();
                     Ok(quote! {
-                        ::clouseau::core::ValueIter::from_values(vec![#(stringify!(#names)),*])
+                        ::clouseau::core::ValueIter::from_values(vec![
+                            #(stringify!(#accessor_names),)*
+                            #(stringify!(#names)),*
+                        ])
                     })
                 }
             }
-            Fields::Unit => {
-                if self.input.transparent {
-                    Err(Error::custom(
-                        "transparent is only supported in structs with one field",
-                    ))
-                } else {
-                    Ok(quote! {
-                        ::clouseau::core::ValueIter::empty()
-                    })
-                }
-            }
+            Fields::Unit => Ok(quote! {
+                ::clouseau::core::ValueIter::from_values(vec![
+                    #(stringify!(#accessor_names)),*
+                ])
+            }),
         }
     }
 
@@ -395,7 +409,7 @@ impl<'a> ImplStruct<'a> {
             return Ok(quote! { Some(Value::from(self.clone()))});
         }
 
-        if self.fields.len() == 1 && self.input.transparent {
+        if self.input.transparent {
             match self.fields {
                 Fields::Tuple(fields) => {
                     let index = Literal::usize_unsuffixed(fields.indices().next().unwrap());
@@ -407,10 +421,6 @@ impl<'a> ImplStruct<'a> {
                 }
                 Fields::Unit => unreachable!(),
             }
-        } else if self.input.transparent {
-            Err(Error::unsupported_shape(
-                "Only structs with a single field may be transparent",
-            ))
         } else {
             Ok(quote! { None })
         }
