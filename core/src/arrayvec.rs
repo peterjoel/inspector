@@ -1,4 +1,4 @@
-use super::{NodeOrValueIter, Queryable, Value, ValueIter};
+use super::{Node, NodeIter, Queryable, Value, ValueIter};
 use arrayvec::{Array, ArrayVec};
 use std::convert::TryFrom;
 
@@ -13,11 +13,11 @@ where
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::from_values(0..self.len())
     }
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         let index = usize::try_from(field).ok()?;
-        self.get(index).map(|v| v as _)
+        self.get(index).map(|v| Node::Queryable(v as _))
     }
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_queryables(self)
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_queryables(self)
     }
 }

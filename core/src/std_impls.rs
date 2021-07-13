@@ -1,4 +1,4 @@
-use crate::{Array, Error, NodeOrValueIter, Queryable, Value, ValueIter};
+use crate::{Array, Error, Node, NodeIter, Queryable, Value, ValueIter};
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::*;
@@ -246,9 +246,9 @@ where
     K: Queryable + TryFrom<Value> + Into<Value> + Hash + Eq + Clone,
     V: Queryable,
 {
-    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<&'a dyn Queryable> {
+    fn member<'a, 'f>(&'a self, field: &'f Value) -> Option<Node<'a>> {
         let key = K::try_from(field.clone()).ok()?;
-        self.get(&key).map(|v| v as _)
+        self.get(&key).map(|v| Node::Queryable(v as _))
     }
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::from_values(self.keys().cloned().map(Into::into))
@@ -256,8 +256,8 @@ where
     fn name(&self) -> &'static str {
         "HashMap"
     }
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_queryables(self.values())
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_queryables(self.values())
     }
 }
 
@@ -266,9 +266,9 @@ where
     K: Queryable + TryFrom<Value> + Into<Value> + Clone + Ord + Eq,
     V: Queryable,
 {
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         let key = K::try_from(field.clone()).ok()?;
-        self.get(&key).map(|v| v as _)
+        self.get(&key).map(|v| Node::Queryable(v as _))
     }
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::from_values(self.keys().cloned().map(Into::into))
@@ -277,8 +277,8 @@ where
         "BTreeMap"
     }
 
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_queryables(self.values())
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_queryables(self.values())
     }
 }
 
@@ -289,8 +289,8 @@ where
     fn name(&self) -> &'static str {
         "BTreeSet"
     }
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_queryables(self)
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_queryables(self)
     }
 }
 
@@ -301,8 +301,8 @@ where
     fn name(&self) -> &'static str {
         "HashSet"
     }
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_queryables(self)
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_queryables(self)
     }
 }
 
@@ -316,13 +316,13 @@ where
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::from_values(0..self.len())
     }
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         let index = usize::try_from(field).ok()?;
-        self.get(index).map(|v| v as _)
+        self.get(index).map(|v| Node::Queryable(v as _))
     }
 
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_queryables(self)
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_queryables(self)
     }
 }
 
@@ -336,13 +336,13 @@ where
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::from_values(0..self.len())
     }
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         let index = usize::try_from(field).ok()?;
-        self.get(index).map(|v| v as _)
+        self.get(index).map(|v| Node::Queryable(v as _))
     }
 
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_queryables(self)
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_queryables(self)
     }
 }
 
@@ -355,8 +355,8 @@ where
     fn name(&self) -> &'static str {
         "BinaryHeap"
     }
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_queryables(self)
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_queryables(self)
     }
 }
 
@@ -370,11 +370,11 @@ where
     fn keys(&self) -> ValueIter<'_> {
         self.as_ref().keys()
     }
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         self.as_ref().member(field)
     }
 
-    fn all(&self) -> NodeOrValueIter<'_> {
+    fn all(&self) -> NodeIter<'_> {
         self.as_ref().all()
     }
 
@@ -447,15 +447,15 @@ where
             ValueIter::empty()
         }
     }
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         self.as_ref().and_then(|val| val.member(field))
     }
 
-    fn all(&self) -> NodeOrValueIter<'_> {
+    fn all(&self) -> NodeIter<'_> {
         if let Some(val) = self.as_ref() {
             val.all()
         } else {
-            NodeOrValueIter::empty()
+            NodeIter::empty()
         }
     }
 
@@ -478,15 +478,15 @@ where
             ValueIter::empty()
         }
     }
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         self.as_ref().ok().and_then(|val| val.member(field))
     }
 
-    fn all(&self) -> NodeOrValueIter<'_> {
+    fn all(&self) -> NodeIter<'_> {
         if let Ok(val) = self.as_ref() {
             val.all()
         } else {
-            NodeOrValueIter::empty()
+            NodeIter::empty()
         }
     }
 
@@ -514,11 +514,11 @@ where
     fn name(&self) -> &'static str {
         self.0.name()
     }
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         self.0.member(field)
     }
 
-    fn all(&self) -> NodeOrValueIter<'_> {
+    fn all(&self) -> NodeIter<'_> {
         self.0.all()
     }
 
@@ -563,13 +563,13 @@ macro_rules! impl_tuples {
             fn name(&self) -> &'static str {
                 stringify!(($($t,)+))
             }
-            fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+            fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
                 #[allow(clippy::collapsible_match)]
                 match field {
                     Value::Int(i) => {
                         match i {
                             $(
-                                $ind => Some(&self.$ind as _),
+                                $ind => Some(Node::Queryable(&self.$ind as _)),
                             )+
                             _ => None
                         }
@@ -578,8 +578,8 @@ macro_rules! impl_tuples {
                 }
             }
 
-            fn all(&self) -> NodeOrValueIter<'_> {
-                NodeOrValueIter::from_nodes(vec![$(&self.$ind as _),+])
+            fn all(&self) -> NodeIter<'_> {
+                NodeIter::from_dyn_queryables(vec![$(&self.$ind as _),+])
             }
         }
 
@@ -638,13 +638,13 @@ macro_rules! impl_arrays {
             fn name(&self) -> &'static str {
                 stringify!([T; $size])
             }
-            fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+            fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
                 #[allow(clippy::collapsible_match)]
                 match field {
                     Value::Int(i) => {
                         match i {
                             $(
-                                $ind => Some(&self[$ind] as _),
+                                $ind => Some(Node::Queryable(&self[$ind] as _)),
                             )*
                             _ => None
                         }
@@ -653,8 +653,8 @@ macro_rules! impl_arrays {
                 }
             }
 
-            fn all(&self) -> NodeOrValueIter<'_> {
-                NodeOrValueIter::from_nodes(vec![$(&self[$ind] as _),*])
+            fn all(&self) -> NodeIter<'_> {
+                NodeIter::from_dyn_queryables(vec![$(&self[$ind] as _),*])
             }
         }
 

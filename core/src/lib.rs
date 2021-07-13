@@ -6,6 +6,7 @@ mod std_impls;
 mod uuid;
 
 use float::WellBehavedF64;
+use std::convert::TryFrom;
 use std::fmt;
 use std::iter;
 use std::rc::Rc;
@@ -34,9 +35,13 @@ pub enum Error {
     Conversion(#[from] Box<dyn std::error::Error>),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub type Node<'a> = &'a (dyn Queryable + 'a);
+#[derive(Debug, Clone)]
+pub enum Node<'a> {
+    Queryable(&'a (dyn Queryable + 'a)),
+    Value(Value),
+}
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum Value {
@@ -73,119 +78,11 @@ impl<'a> Iterator for ValueIter<'a> {
     }
 }
 
-pub struct NodeIter<'a>(pub Box<dyn Iterator<Item = Node<'a>> + 'a>);
+pub struct NodeIter<'a>(pub Box<dyn Iterator<Item = Result<Node<'a>>> + 'a>);
 
 impl<'a> NodeIter<'a> {
     pub fn empty() -> NodeIter<'a> {
         NodeIter(Box::new(iter::empty()))
-    }
-
-    pub fn from_queryables<Q>(queryables: impl IntoIterator<Item = &'a Q> + 'a) -> Self
-    where
-        Q: Queryable + 'a,
-    {
-        NodeIter(Box::from(queryables.into_iter().map(|q| q as _)))
-    }
-}
-
-impl<'a> Iterator for NodeIter<'a> {
-    type Item = Node<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
-}
-
-#[derive(Debug)]
-pub enum NodeOrValue<'a> {
-    Node(Node<'a>),
-    Value(Value),
-}
-
-impl<'a> NodeOrValue<'a> {
-    pub fn try_into_int(self) -> Result<i64> {
-        self.try_into_value()
-            .map_err(|_| Error::ExpectedInt)
-            .and_then(Value::try_into_int)
-    }
-
-    pub fn try_into_value(self) -> Result<Value> {
-        match self {
-            NodeOrValue::Node(node) => {
-                if let Some(data) = node.data() {
-                    Ok(data)
-                } else {
-                    Err(Error::ExpectedValue)
-                }
-            }
-            NodeOrValue::Value(v) => Ok(v),
-        }
-    }
-
-    pub fn try_into_node(self) -> Result<Node<'a>> {
-        match self {
-            NodeOrValue::Node(n) => Ok(n),
-            NodeOrValue::Value(_) => Err(Error::ExpectedNode),
-        }
-    }
-}
-
-impl<'a> From<Value> for NodeOrValue<'a> {
-    fn from(v: Value) -> Self {
-        NodeOrValue::Value(v)
-    }
-}
-
-impl<'a> From<Node<'a>> for NodeOrValue<'a> {
-    fn from(n: Node<'a>) -> Self {
-        NodeOrValue::Node(n)
-    }
-}
-
-impl<'a> fmt::Display for NodeOrValue<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            NodeOrValue::Node(node) => write!(f, "{}", node),
-            NodeOrValue::Value(value) => write!(f, "{}", value),
-        }
-    }
-}
-
-pub struct NodeOrValueIter<'a>(Box<dyn Iterator<Item = Result<NodeOrValue<'a>>> + 'a>);
-
-impl<'a> NodeOrValueIter<'a> {
-    pub fn empty() -> Self {
-        NodeOrValueIter(Box::new(iter::empty()))
-    }
-
-    pub fn one(item: Result<NodeOrValue<'a>>) -> Self {
-        NodeOrValueIter(Box::new(iter::once(item)))
-    }
-
-    pub fn one_node(node: Node<'a>) -> Self {
-        Self::from_raw(iter::once(node).map(|n| Ok(n.into())))
-    }
-
-    pub fn one_value(value: Value) -> Self {
-        Self::from_raw(iter::once(value).map(|v| Ok(v.into())))
-    }
-
-    pub fn from_queryables<I, Q>(nodes: I) -> Self
-    where
-        I: IntoIterator<Item = &'a Q> + 'a,
-        Q: Queryable + 'a,
-    {
-        NodeOrValueIter(Box::new(
-            nodes.into_iter().map(|node| Ok(NodeOrValue::Node(node))),
-        ))
-    }
-
-    pub fn from_nodes<I>(nodes: I) -> Self
-    where
-        I: IntoIterator<Item = &'a dyn Queryable> + 'a,
-    {
-        NodeOrValueIter(Box::new(
-            nodes.into_iter().map(|node| Ok(NodeOrValue::Node(node))),
-        ))
     }
 
     pub fn from_values<I>(values: I) -> Self
@@ -193,28 +90,82 @@ impl<'a> NodeOrValueIter<'a> {
         I: IntoIterator + 'a,
         I::Item: Into<Value>,
     {
-        NodeOrValueIter(Box::new(
+        NodeIter(Box::new(
             values
                 .into_iter()
-                .map(|value| Ok(NodeOrValue::Value(value.into()))),
+                .map(|value| Ok(Node::Value(value.into()))),
         ))
     }
 
-    pub fn from_raw<I>(iter: I) -> Self
+    pub fn from_queryables<Q>(queryables: impl IntoIterator<Item = &'a Q> + 'a) -> Self
     where
-        I: IntoIterator<Item = Result<NodeOrValue<'a>>> + 'a,
+        Q: Queryable + 'a,
     {
-        NodeOrValueIter(Box::new(iter.into_iter()))
+        NodeIter(Box::from(
+            queryables.into_iter().map(|q| Ok(Node::Queryable(q as _))),
+        ))
+    }
+
+    pub fn from_dyn_queryables<I>(nodes: I) -> Self
+    where
+        I: IntoIterator<Item = &'a dyn Queryable> + 'a,
+    {
+        NodeIter(Box::from(
+            nodes.into_iter().map(|node| Ok(Node::Queryable(node))),
+        ))
+    }
+
+    pub fn from_nodes<I>(nodes: I) -> Self
+    where
+        I: IntoIterator<Item = Result<Node<'a>>> + 'a,
+    {
+        NodeIter(Box::new(nodes.into_iter()))
+    }
+
+    pub fn one(item: Result<Node<'a>>) -> Self {
+        NodeIter(Box::from(iter::once(item)))
+    }
+
+    pub fn one_value(value: Value) -> Self {
+        Self::one(Ok(value.into()))
+    }
+
+    pub fn one_node(node: Node<'a>) -> Self {
+        Self::one(Ok(node))
+    }
+
+    pub fn one_dyn_queryable(node: &'a dyn Queryable) -> Self {
+        Self::one_node(node.into())
     }
 }
 
-impl<'a> Iterator for NodeOrValueIter<'a> {
-    type Item = Result<NodeOrValue<'a>>;
+impl<'a> Iterator for NodeIter<'a> {
+    type Item = Result<Node<'a>>;
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next()
     }
 }
 
+impl<'a> From<Value> for Node<'a> {
+    fn from(v: Value) -> Self {
+        Node::Value(v)
+    }
+}
+
+impl<'a> From<&'a dyn Queryable> for Node<'a> {
+    fn from(n: &'a dyn Queryable) -> Self {
+        Node::Queryable(n)
+    }
+}
+
+impl<'a> fmt::Display for Node<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Node::Queryable(node) => write!(f, "{}", node),
+            Node::Value(value) => write!(f, "{}", value),
+        }
+    }
+}
 pub trait Queryable {
     fn keys(&self) -> ValueIter<'_> {
         ValueIter::empty()
@@ -222,19 +173,19 @@ pub trait Queryable {
     fn member<'f>(&self, _: &'f Value) -> Option<Node<'_>> {
         None
     }
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::empty()
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::empty()
     }
-    fn descendants(&self) -> NodeOrValueIter<'_> {
+    fn descendants(&self) -> NodeIter<'_> {
         if self.all().next().is_some() {
-            NodeOrValueIter::from_raw(self.all().chain(self.all().flat_map(|node| {
+            NodeIter::from_nodes(self.all().chain(self.all().flat_map(|node| {
                 if let Ok(node) = node {
                     match node {
-                        NodeOrValue::Node(node) => node.descendants(),
-                        NodeOrValue::Value(value) => NodeOrValueIter::one_value(value),
+                        Node::Queryable(node) => node.descendants(),
+                        Node::Value(value) => NodeIter::one_value(value),
                     }
                 } else {
-                    NodeOrValueIter::empty()
+                    NodeIter::empty()
                 }
             })))
         } else {
@@ -311,13 +262,22 @@ impl fmt::Display for Array {
     }
 }
 
-impl Value {
-    pub fn try_into_int(self) -> Result<i64> {
-        if let Value::Int(i) = self {
-            Ok(i)
-        } else {
-            Err(Error::ExpectedInt)
+impl<'a> TryFrom<Node<'a>> for Value {
+    type Error = Error;
+    fn try_from(node: Node<'a>) -> Result<Value, Self::Error> {
+        match node {
+            Node::Value(value) => Ok(value),
+            Node::Queryable(node) => node.data().ok_or(Error::ExpectedValue),
         }
+    }
+}
+
+impl<'a> TryFrom<Node<'a>> for i64 {
+    type Error = Error;
+    fn try_from(node: Node<'a>) -> Result<i64> {
+        Value::try_from(node)
+            .map_err(|_| Error::ExpectedInt)
+            .and_then(i64::try_from)
     }
 }
 
@@ -333,18 +293,18 @@ impl fmt::Display for Value {
     }
 }
 
-impl<'a> fmt::Display for Node<'a> {
+impl<'a> fmt::Debug for &'a dyn Queryable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[{} {:?}]", self.name(), self.data())
+    }
+}
+
+impl<'a> fmt::Display for &'a dyn Queryable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(data) = self.data() {
             write!(f, "{}", data)
         } else {
             write!(f, "[{}]", self.name())
         }
-    }
-}
-
-impl<'a> fmt::Debug for &'a dyn Queryable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[{} {:?}]", self.name(), self.data())
     }
 }

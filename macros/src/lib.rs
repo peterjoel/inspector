@@ -170,7 +170,7 @@ impl ClouseauDeriveInput {
                 fn member<'f>(&self, field_name: &'f ::clouseau::core::Value) -> Option<::clouseau::core::Node<'_>> {
                     #member_body
                 }
-                fn all(&self) -> ::clouseau::core::NodeOrValueIter<'_> {
+                fn all(&self) -> ::clouseau::core::NodeIter<'_> {
                     #all_body
                 }
                 fn data(&self) -> Option<::clouseau::core::Value> {
@@ -240,10 +240,10 @@ impl<'a> ImplStruct<'a> {
                     Ok(quote! {
                         match field_name {
                             #(
-                                ::clouseau::core::Value::Int(#indices_int) => { Some(&self.#indices_int as _) },
+                                ::clouseau::core::Value::Int(#indices_int) => { Some(::clouseau::core::Node::Queryable(&self.#indices_int as _)) },
                             )*
                             ::clouseau::core::Value::String(s) => match s.parse::<usize>() {
-                                #(Ok(#indices_str) => Some(&self.#indices_str as _),)*
+                                #(Ok(#indices_str) => Some(::clouseau::core::Node::Queryable(&self.#indices_str as _)),)*
                                 _ => None,
                             }
                             _ => None,
@@ -261,7 +261,7 @@ impl<'a> ImplStruct<'a> {
                         match field_name {
                             ::clouseau::core::Value::String(s) => {
                                 match s.as_str() {
-                                    #(stringify!(#names) => Some(&self.#names as _),)*
+                                    #(stringify!(#names) => Some(::clouseau::core::Node::Queryable(&self.#names as _)),)*
                                     _ => None,
                                 }
                             }
@@ -300,7 +300,7 @@ impl<'a> ImplStruct<'a> {
                         .indices()
                         .map(|index| Literal::i64_unsuffixed(index as i64));
                     Ok(quote! {
-                        ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(&self.#indices as _),*])
+                        ::clouseau::core::NodeIter::from_dyn_queryables(vec![#(&self.#indices as _),*])
                     })
                 }
             }
@@ -319,7 +319,7 @@ impl<'a> ImplStruct<'a> {
                 } else {
                     let names = fields.names();
                     Ok(quote! {
-                        ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(&self.#names as _),*])
+                        ::clouseau::core::NodeIter::from_dyn_queryables(vec![#(&self.#names as _),*])
                     })
                 }
             }
@@ -511,11 +511,11 @@ impl<'a> ImplEnum<'a> {
                         Self::#name(#(#bindings),*) => {
                             match field_name {
                                 #(
-                                    ::clouseau::core::Value::Int(#indices) => { Some(#bindings2 as _) },
+                                    ::clouseau::core::Value::Int(#indices) => { Some(::clouseau::core::Node::Queryable(#bindings2 as _)) },
                                 )*
                                 ::clouseau::core::Value::String(s) => if let Ok(i) = s.parse::<i64>() {
                                     match i {
-                                        #(#indices2 => Some(#bindings3 as _),)*
+                                        #(#indices2 => Some(::clouseau::core::Node::Queryable(#bindings3 as _)),)*
                                         _ => None,
                                     }
                                 } else { None },
@@ -531,7 +531,7 @@ impl<'a> ImplEnum<'a> {
                         Self::#name { #(#bindings),* } => {
                             match field_name {
                                 ::clouseau::core::Value::String(s) => match s.as_str() {
-                                    #(stringify!(#bindings2) => { Some(#bindings2 as _) },)*
+                                    #(stringify!(#bindings2) => { Some(::clouseau::core::Node::Queryable(#bindings2 as _)) },)*
                                     _ => None,
                                 }
                                 _ => None,
@@ -592,19 +592,19 @@ impl<'a> ImplEnum<'a> {
                         .map(|i| Ident::new(&format!("f{}", i), fields.span()));
                     let bindings2 = bindings.clone();
                     quote! {
-                        Self::#name(#(#bindings),*) => ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(#bindings2 as _,)*])
+                        Self::#name(#(#bindings),*) => ::clouseau::core::NodeIter::from_dyn_queryables(vec![#(#bindings2 as _,)*])
                     }
                 }
                 syn::Fields::Named(fields) => {
                     let bindings = fields.named.iter().map(|field| &field.ident);
                     let bindings2 = bindings.clone();
                     quote! {
-                        Self::#name { #(#bindings),* } => ::clouseau::core::NodeOrValueIter::from_nodes(vec![#(#bindings2 as _,)*])
+                        Self::#name { #(#bindings),* } => ::clouseau::core::NodeIter::from_dyn_queryables(vec![#(#bindings2 as _,)*])
                     }
                 }
                 syn::Fields::Unit => {
                     quote! {
-                        Self::#name => ::clouseau::core::NodeOrValueIter::empty()
+                        Self::#name => ::clouseau::core::NodeIter::empty()
                     }
                 }
             }

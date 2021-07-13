@@ -1,12 +1,13 @@
 mod std_fns;
 
-use clouseau_core::{Error, Node, NodeOrValue, NodeOrValueIter, Queryable, Result, Value};
+use clouseau_core::{Error, Node, NodeIter, Queryable, Result, Value};
 use itertools::process_results;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt;
 use std::iter;
 
-type ValueFn = dyn for<'a> Fn(NodeOrValueIter<'a>) -> NodeOrValueIter<'a>;
+type ValueFn = dyn for<'a> Fn(NodeIter<'a>) -> NodeIter<'a>;
 
 pub struct Context {
     vars: HashMap<String, Value>,
@@ -40,7 +41,7 @@ impl Context {
 
     pub fn with_fun<F>(mut self, name: String, fun: F) -> Self
     where
-        F: for<'a> Fn(NodeOrValueIter<'a>) -> NodeOrValueIter<'a> + 'static,
+        F: for<'a> Fn(NodeIter<'a>) -> NodeIter<'a> + 'static,
     {
         self.fns.insert(name, Box::new(fun) as _);
         self
@@ -51,7 +52,10 @@ impl Context {
         q: &'a Query,
         root: &'a dyn Queryable,
     ) -> impl Iterator<Item = Box<dyn fmt::Display + 'a>> + 'a {
-        let ctx = ContextInner { ctx: self, root };
+        let ctx = ContextInner {
+            ctx: self,
+            root: root.into(),
+        };
         q.exec(ctx)
     }
 
@@ -70,7 +74,7 @@ impl<'a> ContextInner<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ContextInner<'a> {
     root: Node<'a>,
     ctx: &'a Context,
@@ -157,10 +161,12 @@ impl Query {
         &'a self,
         ctx: ContextInner<'a>,
     ) -> impl Iterator<Item = Box<dyn fmt::Display + 'a>> + 'a {
-        self.path.exec(ctx, Some(ctx.root)).map(|res| match res {
-            Ok(node_or_value) => Box::new(node_or_value) as _,
-            Err(err) => Box::new(format!("Error: {}", err)) as _,
-        })
+        self.path
+            .exec(ctx.clone(), Some(ctx.root))
+            .map(|res| match res {
+                Ok(node) => Box::new(node) as _,
+                Err(err) => Box::new(format!("Error: {}", err)) as _,
+            })
     }
 }
 
@@ -169,24 +175,25 @@ impl Path {
         self.selectors.push(selector);
     }
 
-    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: Option<Node<'a>>) -> NodeOrValueIter<'a> {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: Option<Node<'a>>) -> NodeIter<'a> {
+        dbg!(&q);
         if let Some(init) = q
             .or_else(|| {
                 if self.is_from_root() {
-                    Some(ctx.root)
+                    Some(ctx.root.clone())
                 } else {
                     None
                 }
             })
-            .map(NodeOrValueIter::one_node)
+            .map(NodeIter::one_node)
         {
-            NodeOrValueIter::from_raw(
+            NodeIter(Box::from(
                 self.selectors
                     .iter()
-                    .fold(init, move |acc, selector| selector.exec(ctx, acc)),
-            )
+                    .fold(init, move |acc, selector| selector.exec(ctx.clone(), acc)),
+            ))
         } else {
-            NodeOrValueIter::empty()
+            NodeIter::empty()
         }
     }
 
@@ -204,23 +211,19 @@ impl Path {
 }
 
 impl Selector {
-    pub fn exec<'a>(
-        &'a self,
-        ctx: ContextInner<'a>,
-        values: NodeOrValueIter<'a>,
-    ) -> NodeOrValueIter<'a> {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, values: NodeIter<'a>) -> NodeIter<'a> {
         match self {
             Selector::Segment(segment) => {
-                NodeOrValueIter::from_raw(values.flat_map(move |node_or_val| match node_or_val {
-                    e @ Err(_) => NodeOrValueIter::from_raw(iter::once(e)),
-                    Ok(node_or_value) => segment.exec(ctx, node_or_value),
-                }))
+                NodeIter(Box::from(values.flat_map(move |node| match node {
+                    e @ Err(_) => NodeIter(Box::from(iter::once(e))),
+                    Ok(node) => segment.exec(ctx.clone(), node),
+                })))
             }
             Selector::Filter(pred) => {
-                NodeOrValueIter::from_raw(values.flat_map(move |node_or_val| match node_or_val {
-                    e @ Err(_) => NodeOrValueIter::from_raw(iter::once(e)),
-                    Ok(node_or_value) => pred.exec(ctx, node_or_value),
-                }))
+                NodeIter(Box::from(values.flat_map(move |node| match node {
+                    e @ Err(_) => NodeIter(Box::from(iter::once(e))),
+                    Ok(node) => pred.exec(ctx.clone(), node),
+                })))
             }
             Selector::Call(call) => call.exec(ctx, values),
         }
@@ -228,12 +231,8 @@ impl Selector {
 }
 
 impl Segment {
-    pub fn exec<'a>(
-        &'a self,
-        ctx: ContextInner<'a>,
-        node_or_value: NodeOrValue<'a>,
-    ) -> NodeOrValueIter<'a> {
-        if let NodeOrValue::Node(q) = node_or_value {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, node: Node<'a>) -> NodeIter<'a> {
+        if let Node::Queryable(q) = node {
             match self {
                 Self::Child(s) => {
                     if let Some(member) = match s {
@@ -242,36 +241,32 @@ impl Segment {
                             if let Some(value) = ctx.var(name) {
                                 q.member(&value)
                             } else {
-                                return NodeOrValueIter::one(Err(Error::VarNotFound));
+                                return NodeIter::one(Err(Error::VarNotFound));
                             }
                         }
                     } {
-                        NodeOrValueIter::one_node(member)
+                        NodeIter::one_node(member)
                     } else {
-                        NodeOrValueIter::empty()
+                        NodeIter::empty()
                     }
                 }
                 Self::Children => q.all(),
-                Self::Current => NodeOrValueIter::one_node(q),
-                Self::Root => NodeOrValueIter::one_node(ctx.root),
+                Self::Current => NodeIter::one_dyn_queryable(q),
+                Self::Root => NodeIter::one_node(ctx.root),
                 Self::Descendants => q.descendants(),
             }
         } else {
-            NodeOrValueIter::from_raw(iter::once(Err(Error::ExpectedNode)))
+            NodeIter::from_nodes(iter::once(Err(Error::ExpectedNode)))
         }
     }
 }
 
 impl Call {
-    pub fn exec<'a>(
-        &'a self,
-        ctx: ContextInner<'a>,
-        values: NodeOrValueIter<'a>,
-    ) -> NodeOrValueIter<'a> {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, values: NodeIter<'a>) -> NodeIter<'a> {
         if let Some(f) = ctx.fun(&self.0) {
             f(values)
         } else {
-            NodeOrValueIter::one(Err(Error::FnNotFound))
+            NodeIter::one(Err(Error::FnNotFound))
         }
     }
 }
@@ -286,32 +281,28 @@ impl Pred {
         }
     }
 
-    fn exec<'a>(
-        &self,
-        ctx: ContextInner<'a>,
-        node_or_value: NodeOrValue<'a>,
-    ) -> NodeOrValueIter<'a> {
-        match node_or_value {
-            NodeOrValue::Node(node) => match self.pred(
-                ctx,
+    fn exec<'a>(&self, ctx: ContextInner<'a>, node: Node<'a>) -> NodeIter<'a> {
+        match node {
+            Node::Queryable(_) => match self.pred(
+                ctx.clone(),
                 self.path
-                    .exec(ctx, Some(node))
-                    .map(|n| n.and_then(|n| n.try_into_value())),
-                Some(node),
+                    .exec(ctx, Some(node.clone()))
+                    .map(|n| n.and_then(Value::try_from)),
+                Some(node.clone()),
             ) {
-                Ok(true) => NodeOrValueIter::one_node(node),
-                Ok(false) => NodeOrValueIter::empty(),
-                Err(err) => NodeOrValueIter::one(Err(err)),
+                Ok(true) => NodeIter::one_node(node),
+                Ok(false) => NodeIter::empty(),
+                Err(err) => NodeIter::one(Err(err)),
             },
-            NodeOrValue::Value(value) => {
+            Node::Value(value) => {
                 if self.path.is_dot() {
                     match self.pred(ctx, iter::once(Ok(value.clone())), None) {
-                        Ok(true) => NodeOrValueIter::one_value(value),
-                        Ok(false) => NodeOrValueIter::empty(),
-                        Err(err) => NodeOrValueIter::one(Err(err)),
+                        Ok(true) => NodeIter::one_value(value),
+                        Ok(false) => NodeIter::empty(),
+                        Err(err) => NodeIter::one(Err(err)),
                     }
                 } else {
-                    NodeOrValueIter::one(Err(Error::PathOnValue))
+                    NodeIter::one(Err(Error::PathOnValue))
                 }
             }
         }
@@ -337,8 +328,8 @@ impl Pred {
                             return Ok(!is_all);
                         }
                         let mut rhs = path
-                            .exec(ctx, node)
-                            .map(|n| n.and_then(|n| n.try_into_value()))
+                            .exec(ctx.clone(), node.clone())
+                            .map(|n| n.and_then(Value::try_from))
                             .peekable();
                         if rhs.peek().is_none() {
                             Err(Error::Empty("[Predicate]"))
@@ -370,15 +361,13 @@ impl Pred {
 }
 
 impl OperatorRhs {
-    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: Node<'a>) -> NodeOrValueIter<'a> {
+    pub fn exec<'a>(&'a self, ctx: ContextInner<'a>, q: Node<'a>) -> NodeIter<'a> {
         match self {
-            OperatorRhs::Value(value) => NodeOrValueIter::one_value(value.clone()),
+            OperatorRhs::Value(value) => NodeIter::one_value(value.clone()),
             OperatorRhs::Path(path) => path.exec(ctx, Some(q)),
-            OperatorRhs::Var(name) => NodeOrValueIter::one(
-                ctx.var(name)
-                    .map(NodeOrValue::from)
-                    .ok_or(Error::VarNotFound),
-            ),
+            OperatorRhs::Var(name) => {
+                NodeIter::one(ctx.var(name).map(Node::from).ok_or(Error::VarNotFound))
+            }
         }
     }
 }

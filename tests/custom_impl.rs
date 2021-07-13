@@ -15,20 +15,20 @@ impl Queryable for Foo {
     fn name(&self) -> &'static str {
         "Foo"
     }
-    fn member<'f>(&self, field: &'f Value) -> Option<&dyn Queryable> {
+    fn member<'f>(&self, field: &'f Value) -> Option<Node<'_>> {
         if let Value::String(s) = field {
             match s.as_str() {
-                "a" => Some(&self.a as _),
-                "b" => Some(&self.b as _),
-                "v" => Some(&self.v as _),
+                "a" => Some(Node::Queryable(&self.a as _)),
+                "b" => Some(Node::Queryable(&self.b as _)),
+                "v" => Some(Node::Queryable(&self.v as _)),
                 _ => None,
             }
         } else {
             None
         }
     }
-    fn all(&self) -> NodeOrValueIter<'_> {
-        NodeOrValueIter::from_nodes(vec![&self.a as _, &self.b as _, &self.v as _])
+    fn all(&self) -> NodeIter<'_> {
+        NodeIter::from_dyn_queryables(vec![&self.a as _, &self.b as _, &self.v as _])
     }
 }
 
